@@ -134,8 +134,8 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Я могу отвечать на вопросы.\n"
-        "Воспользуйтесь кнопками меню для навигации.",
+        "Я могу отвечать на ваши вопросы.\n\n"
+        "Если у вас возникли вопросы или проблемы, пожалуйста, обратитесь к администратору: @adam0v_0",
         reply_markup=get_main_menu()
     )
 
