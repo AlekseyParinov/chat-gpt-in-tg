@@ -168,6 +168,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Если мы дошли сюда, значит это обычное сообщение для ИИ
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
+    # Добавляем инструкцию по форматированию в системную роль
+    clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
+
     if not has_access(user_id):
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
         return
@@ -332,7 +335,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=messages,
+            messages=[{"role": "system", "content": clean_role}] + history + [{"role": "user", "content": text}],
             max_tokens=300,
             temperature=0.7
         )
@@ -411,7 +414,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Кодируем в base64 для OpenAI Vision
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
     
-    caption = update.message.caption or "Реши это задание на фото."
+    caption = (update.message.caption or "Реши это задание на фото.") + " ВАЖНО: Не используй LaTeX-разметку. Пиши формулы обычным понятным текстом."
     
     try:
         await update.message.reply_text("⏳ Анализирую фото, подождите...", reply_markup=get_main_menu())
