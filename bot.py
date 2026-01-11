@@ -121,9 +121,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
-
+    
+    # Регулярные выражения для поиска кнопок (на случай лишних пробелов)
+    menu_buttons = ["👤 Профиль", "📜 История", "💎 Купить подписку", "❓ Помощь", "💬 Начать чат", "🖼 Создать картинку"]
+    
     # Если это простое нажатие кнопки меню, не вызываем OpenAI
-    if text in ["👤 Профиль", "📜 История", "💎 Купить подписку", "❓ Помощь", "💬 Начать чат", "🖼 Создать картинку"]:
+    if text in menu_buttons:
         if text == "👤 Профиль":
             role, history, free_requests, subscription_end = get_user_context(user_id)
             status = "Активна" if subscription_end > time.time() else "Неактивна"
@@ -133,7 +136,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Ваш ID: {user_id}\n"
                 f"Остаток бесплатных запросов: {free_requests}\n"
                 f"Подписка: {status}\n"
-                f"Дата окончания: {sub_text}"
+                f"Дата окончания: {sub_text}",
+                reply_markup=get_main_menu()
             )
         elif text == "📜 История":
             await history_command(update, context)
@@ -142,11 +146,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "❓ Помощь":
             await help_command(update, context)
         elif text == "💬 Начать чат":
-            await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!")
+            await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
         elif text == "🖼 Создать картинку":
-            await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.")
+            await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.", reply_markup=get_main_menu())
         return
 
+    # Проверка доступа ПЕРЕД вызовом OpenAI
     role, history, free_requests, subscription_end = get_user_context(user_id)
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
