@@ -184,9 +184,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Если мы дошли сюда, значит это обычное сообщение для ИИ
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
-    # Добавляем инструкцию по форматированию в системную роль
-    clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
-
     # Проверка на VIP доступ
     is_vip = False
     if username:
@@ -194,6 +191,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clean_username = str(username).lstrip('@').lower()
         vip_list = [str(v).lstrip('@').lower() for v in VIP_USERNAMES]
         is_vip = clean_username in vip_list
+
+    # Добавляем инструкцию по форматированию в системную роль
+    clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
 
     if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
@@ -374,19 +374,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
         import traceback
-        logging.error(f"Error in handle_message: {traceback.format_exc()}")
-        error_msg = str(e)
-        if "insufficient_quota" in error_msg or "429" in error_msg:
-            await update.message.reply_text(
-                "🤖 Извините, сейчас я перегружен или у меня закончились ресурсы для обработки запросов. "
-                "Пожалуйста, попробуйте позже или обратитесь к администратору @adam0v_0.",
-                reply_markup=get_main_menu()
-            )
-        else:
-            await update.message.reply_text(
-                "Произошла ошибка при обработке сообщения. Попробуйте еще раз позже.",
-                reply_markup=get_main_menu()
-            )
+        error_msg = traceback.format_exc()
+        logging.error(f"FATAL ERROR in handle_message: {error_msg}")
+        
+        # Информируем пользователя о типе ошибки для отладки, если это админ
+        if str(update.message.from_user.username) == ADMIN_USERNAME.lstrip('@'):
+             await update.message.reply_text(f"⚠️ Ошибка: {str(e)}")
+
+        await update.message.reply_text(
+            "Произошла ошибка при обработке сообщения. Попробуйте еще раз позже.",
+            reply_markup=get_main_menu()
+        )
 
 # --- Генерация картинок ---
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
