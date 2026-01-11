@@ -46,9 +46,9 @@ conn.commit()
 # --- Хелперы ---
 def get_main_menu():
     keyboard = [
-        ["💬 Начать чат", "🖼 Создать картинку"],
-        ["👤 Профиль", "📜 История"],
-        ["💎 Подписка", "❓ Помощь"]
+        ["/chat_start", "/image_start"],
+        ["/profile", "/history"],
+        ["/subscribe", "/help"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -142,27 +142,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
-    # Сначала проверяем нажатия на кнопки меню по точному совпадению текста
-    # Это предотвращает отправку текста кнопок в OpenAI
-    if text == "💬 Начать чат":
-        await chat_start(update, context)
-        return
-    elif text == "🖼 Создать картинку":
-        await image_start(update, context)
-        return
-    elif text == "👤 Профиль":
-        await profile_command(update, context)
-        return
-    elif text == "📜 История":
-        await history_command(update, context)
-        return
-    elif text == "💎 Подписка":
-        await subscribe_menu(update, context)
-        return
-    elif text == "❓ Помощь":
-        await help_command(update, context)
-        return
-
     # Если сообщение начинается с /, это команда, она обработается CommandHandler
     if text.startswith('/'):
         return
