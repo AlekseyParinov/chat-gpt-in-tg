@@ -122,7 +122,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "👤 Профиль":
-        await profile_command(update, context)
+        role, history, free_requests, subscription_end = get_user_context(user_id)
+        status = "Активна" if subscription_end > time.time() else "Неактивна"
+        sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
+        await update.message.reply_text(
+            f"👤 Профиль\n\n"
+            f"Ваш ID: {user_id}\n"
+            f"Остаток бесплатных запросов: {free_requests}\n"
+            f"Подписка: {status}\n"
+            f"Дата окончания: {sub_text}"
+        )
         return
     elif text == "📜 История":
         await history_command(update, context)
@@ -141,19 +150,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     role, history, free_requests, subscription_end = get_user_context(user_id)
-    user_id = str(update.message.from_user.id)
-    _, _, free_requests, subscription_end = get_user_context(user_id)
-    
-    status = "Активна" if subscription_end > time.time() else "Неактивна"
-    sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
-    
-    await update.message.reply_text(
-        f"👤 Профиль\n\n"
-        f"Ваш ID: {user_id}\n"
-        f"Остаток бесплатных запросов: {free_requests}\n"
-        f"Подписка: {status}\n"
-        f"Дата окончания: {sub_text}"
-    )
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) != ADMIN_ID:
@@ -360,7 +356,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("history", history_command))
 
     app.add_handler(CommandHandler("admin_stats", admin_stats))
