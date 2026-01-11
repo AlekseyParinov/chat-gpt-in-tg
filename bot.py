@@ -185,7 +185,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
 
     # Проверка на VIP доступ
-    is_vip = username in VIP_USERNAMES if username else False
+    is_vip = False
+    if username:
+        # Убираем @ если он есть и приводим к нижнему регистру для надежности
+        clean_username = username.lstrip('@').lower()
+        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
+        is_vip = clean_username in vip_list
 
     if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
@@ -384,7 +389,12 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username
     _, _, free_requests, subscription_end = get_user_context(user_id)
     
-    is_vip = username in VIP_USERNAMES if username else False
+    is_vip = False
+    if username:
+        clean_username = username.lstrip('@').lower()
+        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
+        is_vip = clean_username in vip_list
+
     if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.")
         return
@@ -423,7 +433,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user.username
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
-    is_vip = username in VIP_USERNAMES if username else False
+    is_vip = False
+    if username:
+        clean_username = username.lstrip('@').lower()
+        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
+        is_vip = clean_username in vip_list
+
     if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
         return
