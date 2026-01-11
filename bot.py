@@ -332,7 +332,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
-            max_tokens=300,
             temperature=0.7
         )
         answer = response.choices[0].message.content
