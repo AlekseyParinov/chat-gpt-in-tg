@@ -242,17 +242,28 @@ async def activate_subscription(update: Update, context: ContextTypes.DEFAULT_TY
         return
     
     if not context.args:
-        await update.message.reply_text("Использование: /activate_sub <user_id>")
+        await update.message.reply_text("Использование: /activate_sub <user_id> [месяцев]\nПример: /activate_sub 123456789 3")
         return
-        
+    
     target_user_id = context.args[0]
+    months = 1
+    if len(context.args) > 1:
+        try:
+            months = int(context.args[1])
+            if months < 1:
+                months = 1
+        except ValueError:
+            months = 1
+    
+    days = months * 30
     role, history, free_requests, _ = get_user_context(target_user_id)
-    subscription_end = time.time() + 30*24*3600
+    subscription_end = time.time() + days * 24 * 3600
     save_user_context(target_user_id, role, history, free_requests, subscription_end)
     
-    await update.message.reply_text(f"✅ Подписка для {target_user_id} активирована на 30 дней.")
+    month_word = "месяц" if months == 1 else ("месяца" if months < 5 else "месяцев")
+    await update.message.reply_text(f"✅ Подписка для {target_user_id} активирована на {months} {month_word}.")
     try:
-        await context.bot.send_message(chat_id=target_user_id, text="🌟 Ваша подписка активирована на 30 дней! Приятного использования.")
+        await context.bot.send_message(chat_id=target_user_id, text=f"🌟 Ваша подписка активирована на {months} {month_word}! Приятного использования.")
     except Exception:
         pass
 
