@@ -89,11 +89,47 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/start - запуск бота\n"
         "/help - помощь\n"
         "/profile - личный кабинет\n"
+        "/models - выбор модели GPT\n"
         "/history - последние 20 сообщений\n"
         "/subscribe_telegram - Telegram Payments\n"
         "/pay_qiwi - оплата через Qiwi\n"
         "/pay_card - оплата на карту Мир"
     )
+
+async def models_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    role, history, free_requests, subscription_end = get_user_context(user_id)
+    
+    if subscription_end <= time.time():
+        await update.message.reply_text("Выбор моделей доступен только подписчикам. Используйте /subscribe_telegram для активации.")
+        return
+
+    # Извлекаем текущую модель из метаданных роли или по умолчанию
+    current_model = "gpt-3.5-turbo"
+    if " (model:" in role:
+        current_model = role.split(" (model:")[1].replace(")", "")
+
+    if not context.args:
+        await update.message.reply_text(
+            f"Текущая модель: {current_model}\n\n"
+            "Доступные модели:\n"
+            "1. gpt-3.5-turbo (быстрая)\n"
+            "2. gpt-4o (умная)\n\n"
+            "Чтобы сменить, введите: /models 1 или /models 2"
+        )
+        return
+
+    choice = context.args[0]
+    new_model = "gpt-3.5-turbo"
+    if choice == "2":
+        new_model = "gpt-4o"
+    
+    # Сохраняем модель в описание роли (хак для текущей схемы БД)
+    base_role = role.split(" (model:")[0]
+    new_role = f"{base_role} (model:{new_model})"
+    save_user_context(user_id, new_role, history, free_requests, subscription_end)
+    
+    await update.message.reply_text(f"Модель успешно изменена на {new_model}")
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
@@ -262,12 +298,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Первые 10 сообщений закончились. Используй /subscribe_telegram, /pay_qiwi или /pay_card.")
         return
 
-    messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
+    model = "gpt-3.5-turbo"
+    if " (model:" in role:
+        model = role.split(" (model:")[1].replace(")", "")
+    
+    # Очищаем системный промпт от метаданных модели
+    system_content = role.split(" (model:")[0]
+
+    messages = [{"role": "system", "content": system_content}] + history + [{"role": "user", "content": text}]
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=model,
             messages=messages,
-            max_tokens=300,
+            max_tokens=500 if "gpt-4" in model else 300,
             temperature=0.7
         )
         answer = response.choices[0].message.content
@@ -314,6 +357,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(CommandHandler("models", models_command))
     app.add_handler(CommandHandler("history", history_command))
 
     app.add_handler(CommandHandler("admin_stats", admin_stats))
