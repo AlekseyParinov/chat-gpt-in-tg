@@ -46,9 +46,9 @@ conn.commit()
 # --- Хелперы ---
 def get_main_menu():
     keyboard = [
-        ["💬 Начать чат", "🖼 Создать картинку"],
-        ["👤 Профиль", "📜 История"],
-        ["💎 Купить подписку", "❓ Помощь"]
+        ["/chat_start", "/image_start"],
+        ["/profile", "/history"],
+        ["/subscribe", "/help"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -94,6 +94,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu()
     )
 
+async def chat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
+
+async def image_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.", reply_markup=get_main_menu())
+
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    role, history, free_requests, subscription_end = get_user_context(user_id)
+    status = "Активна" if subscription_end > time.time() else "Неактивна"
+    sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
+    await update.effective_message.reply_text(
+        f"👤 Профиль\n\n"
+        f"Ваш ID: {user_id}\n"
+        f"Остаток бесплатных запросов: {free_requests}\n"
+        f"Подписка: {status}\n"
+        f"Дата окончания: {sub_text}",
+        reply_markup=get_main_menu()
+    )
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Я могу отвечать на вопросы и генерировать картинки.\n"
@@ -122,49 +142,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
-    # Нормализуем текст
-    normalized_text = text.strip()
-    
-    # Список кнопок БЕЗ эмодзи для более надежного сравнения
-    # Но так как кнопки содержат эмодзи, будем проверять вхождение или точное совпадение
-    menu_actions = {
-        "👤 Профиль": "profile",
-        "📜 История": "history",
-        "💎 Купить подписку": "subscribe",
-        "❓ Помощь": "help",
-        "💬 Начать чат": "chat_start",
-        "🖼 Создать картинку": "image_start"
-    }
-    
-    # Если текст сообщения совпадает с любой из кнопок меню
-    if normalized_text in menu_actions:
-        action = menu_actions[normalized_text]
-        if action == "profile":
-            role, history, free_requests, subscription_end = get_user_context(user_id)
-            status = "Активна" if subscription_end > time.time() else "Неактивна"
-            sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
-            await update.message.reply_text(
-                f"👤 Профиль\n\n"
-                f"Ваш ID: {user_id}\n"
-                f"Остаток бесплатных запросов: {free_requests}\n"
-                f"Подписка: {status}\n"
-                f"Дата окончания: {sub_text}",
-                reply_markup=get_main_menu()
-            )
-        elif action == "history":
-            await history_command(update, context)
-        elif action == "subscribe":
-            await subscribe_menu(update, context)
-        elif action == "help":
-            await help_command(update, context)
-        elif action == "chat_start":
-            await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
-        elif action == "image_start":
-            await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.", reply_markup=get_main_menu())
-        return
-
-    # Проверка на служебные сообщения (чтобы не отправлять их в OpenAI)
-    if normalized_text.startswith('/'):
+    # Если сообщение начинается с /, это команда, она обработается CommandHandler
+    if text.startswith('/'):
         return
 
     # Если мы дошли сюда, значит это обычное сообщение для ИИ
@@ -380,8 +359,12 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("chat_start", chat_start))
+    app.add_handler(CommandHandler("image_start", image_start))
+    app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("history", history_command))
+    app.add_handler(CommandHandler("subscribe", subscribe_menu))
 
     app.add_handler(CommandHandler("admin_stats", admin_stats))
     app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
