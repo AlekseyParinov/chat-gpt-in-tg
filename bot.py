@@ -327,7 +327,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
-        await update.message.reply_text(f"Ошибка OpenAI: {e}")
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            await update.message.reply_text(
+                "🤖 Извините, сейчас я перегружен или у меня закончились ресурсы для обработки запросов. "
+                "Пожалуйста, попробуйте позже или обратитесь к администратору @adam0v_0.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(
+                "Произошла ошибка при обработке сообщения. Попробуйте еще раз позже.",
+                reply_markup=get_main_menu()
+            )
 
 # --- Генерация картинок ---
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -352,7 +363,18 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
-        await update.message.reply_text(f"Ошибка при генерации картинки: {e}")
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            await update.message.reply_text(
+                "🤖 Извините, сейчас у меня закончились ресурсы для генерации изображений. "
+                "Пожалуйста, попробуйте позже или обратитесь к администратору @adam0v_0.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(
+                "Произошла ошибка при генерации картинки. Попробуйте еще раз позже.",
+                reply_markup=get_main_menu()
+            )
 
 # --- Основная функция ---
 def main():
