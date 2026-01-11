@@ -55,8 +55,7 @@ def get_main_menu():
 def get_payment_menu():
     keyboard = [
         [InlineKeyboardButton("💳 Карта Мир", callback_data="pay_card")],
-        [InlineKeyboardButton("🥝 Qiwi", callback_data="pay_qiwi")],
-        [InlineKeyboardButton("🏦 Telegram Payments", callback_data="pay_telegram")]
+        [InlineKeyboardButton("🥝 Qiwi", callback_data="pay_qiwi")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
