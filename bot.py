@@ -23,6 +23,8 @@ QIWI_PHONE = os.environ.get("QIWI_PHONE")     # номер кошелька
 CARD_MIR_NUMBER = os.environ.get("CARD_MIR_NUMBER")  # карта Мир
 CARD_MIR_AMOUNT = int(os.environ.get("CARD_MIR_AMOUNT", 30))  # сумма перевода в рублях
 
+ADMIN_ID = os.environ.get("ADMIN_ID") # ID администратора
+
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -86,11 +88,65 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Команды:\n"
         "/start - запуск бота\n"
         "/help - помощь\n"
+        "/profile - личный кабинет\n"
         "/history - последние 20 сообщений\n"
         "/subscribe_telegram - Telegram Payments\n"
         "/pay_qiwi - оплата через Qiwi\n"
         "/pay_card - оплата на карту Мир"
     )
+
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    _, _, free_requests, subscription_end = get_user_context(user_id)
+    
+    status = "Активна" if subscription_end > time.time() else "Неактивна"
+    sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
+    
+    await update.message.reply_text(
+        f"👤 Профиль\n\n"
+        f"Ваш ID: {user_id}\n"
+        f"Остаток бесплатных запросов: {free_requests}\n"
+        f"Подписка: {status}\n"
+        f"Дата окончания: {sub_text}"
+    )
+
+async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.message.from_user.id) != ADMIN_ID:
+        return
+    
+    cursor.execute("SELECT COUNT(*) FROM contexts")
+    total_users = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM contexts WHERE subscription_end > ?", (time.time(),))
+    active_subs = cursor.fetchone()[0]
+    
+    await update.message.reply_text(
+        f"📊 Статистика бота\n\n"
+        f"Всего пользователей: {total_users}\n"
+        f"Активных подписок: {active_subs}"
+    )
+
+async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.message.from_user.id) != ADMIN_ID:
+        return
+    
+    msg = " ".join(context.args)
+    if not msg:
+        await update.message.reply_text("Введите текст рассылки после команды.")
+        return
+    
+    cursor.execute("SELECT user_id FROM contexts")
+    users = cursor.fetchall()
+    
+    count = 0
+    for user in users:
+        try:
+            await context.bot.send_message(chat_id=user[0], text=msg)
+            count += 1
+        except Exception:
+            continue
+            
+    await update.message.reply_text(f"✅ Рассылка завершена. Отправлено {count} пользователям.")
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
@@ -257,7 +313,11 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("history", history_command))
+
+    app.add_handler(CommandHandler("admin_stats", admin_stats))
+    app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
 
     app.add_handler(CommandHandler("subscribe_telegram", subscribe_telegram))
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
