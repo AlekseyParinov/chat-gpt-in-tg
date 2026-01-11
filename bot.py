@@ -248,6 +248,14 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("image", generate_image))
 
+    # Error handler
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logging.error(f"Exception while handling an update: {context.error}")
+        if isinstance(update, Update) and update.message:
+            await update.message.reply_text(f"Произошла ошибка: {context.error}")
+
+    app.add_error_handler(error_handler)
+
     print("Платный бот с Telegram Payments, Qiwi и картой Мир запущен...")
     app.run_polling()
 
