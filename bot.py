@@ -101,8 +101,20 @@ def save_user_context(user_id, role, history, free_requests, subscription_end):
     conn.commit()
 
 def has_access(user_id):
+    # Бесплатный доступ для избранных пользователей
+    try:
+        user_info = cursor.execute("SELECT username FROM contexts WHERE user_id=?", (user_id,)).fetchone()
+        # В этой версии username может не быть в таблице, так что проверим по ID или добавим логику имен
+        # Но проще всего добавить список разрешенных username и проверять в вызывающей функции
+        pass 
+    except:
+        pass
+
     _, _, free_requests, subscription_end = get_user_context(user_id)
     return free_requests > 0 or subscription_end > time.time()
+
+# Список VIP-пользователей
+VIP_USERNAMES = ["@adam0v_0", "@zeiszee", "@Leksei_yy", "adam0v_0", "zeiszee", "Leksei_yy"]
 
 # --- Команды ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,6 +171,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    username = update.message.from_user.username
     text = update.message.text
     
     # Если сообщение начинается с /, это команда, она обработается CommandHandler
@@ -171,7 +184,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Добавляем инструкцию по форматированию в системную роль
     clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
 
-    if not has_access(user_id):
+    # Проверка на VIP доступ
+    is_vip = username in VIP_USERNAMES if username else False
+
+    if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
         return
 
@@ -365,8 +381,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Генерация картинок ---
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    username = update.message.from_user.username
     _, _, free_requests, subscription_end = get_user_context(user_id)
-    if not has_access(user_id):
+    
+    is_vip = username in VIP_USERNAMES if username else False
+    if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.")
         return
 
@@ -401,9 +420,11 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Генерация картинок ---
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
+    username = update.message.from_user.username
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
-    if not has_access(user_id):
+    is_vip = username in VIP_USERNAMES if username else False
+    if not has_access(user_id) and not is_vip:
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
         return
 
