@@ -122,13 +122,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
-    # Нормализуем текст: убираем пробелы и приводим к одному виду
+    # Нормализуем текст
     normalized_text = text.strip()
-    menu_buttons = ["👤 Профиль", "📜 История", "💎 Купить подписку", "❓ Помощь", "💬 Начать чат", "🖼 Создать картинку"]
     
-    # Если это простое нажатие кнопки меню, не вызываем OpenAI
-    if normalized_text in menu_buttons:
-        if normalized_text == "👤 Профиль":
+    # Список кнопок БЕЗ эмодзи для более надежного сравнения
+    # Но так как кнопки содержат эмодзи, будем проверять вхождение или точное совпадение
+    menu_actions = {
+        "👤 Профиль": "profile",
+        "📜 История": "history",
+        "💎 Купить подписку": "subscribe",
+        "❓ Помощь": "help",
+        "💬 Начать чат": "chat_start",
+        "🖼 Создать картинку": "image_start"
+    }
+    
+    # Если текст сообщения совпадает с любой из кнопок меню
+    if normalized_text in menu_actions:
+        action = menu_actions[normalized_text]
+        if action == "profile":
             role, history, free_requests, subscription_end = get_user_context(user_id)
             status = "Активна" if subscription_end > time.time() else "Неактивна"
             sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
@@ -140,19 +151,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Дата окончания: {sub_text}",
                 reply_markup=get_main_menu()
             )
-        elif normalized_text == "📜 История":
+        elif action == "history":
             await history_command(update, context)
-        elif normalized_text == "💎 Купить подписку":
+        elif action == "subscribe":
             await subscribe_menu(update, context)
-        elif normalized_text == "❓ Помощь":
+        elif action == "help":
             await help_command(update, context)
-        elif normalized_text == "💬 Начать чат":
+        elif action == "chat_start":
             await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
-        elif normalized_text == "🖼 Создать картинку":
+        elif action == "image_start":
             await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.", reply_markup=get_main_menu())
         return
 
-    # Проверка доступа ПЕРЕД вызовом OpenAI
+    # Проверка на служебные сообщения (чтобы не отправлять их в OpenAI)
+    if normalized_text.startswith('/'):
+        return
+
+    # Если мы дошли сюда, значит это обычное сообщение для ИИ
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
     if not has_access(user_id):
