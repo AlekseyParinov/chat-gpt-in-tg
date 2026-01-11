@@ -3,10 +3,10 @@ import sqlite3
 import time
 import os
 import requests
-from telegram import Update, LabeledPrice
+from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
-    filters, PreCheckoutQueryHandler
+    filters, PreCheckoutQueryHandler, CallbackQueryHandler
 )
 from openai import OpenAI
 from io import BytesIO
@@ -43,6 +43,22 @@ CREATE TABLE IF NOT EXISTS contexts (
 conn.commit()
 
 # --- Хелперы ---
+def get_main_menu():
+    keyboard = [
+        ["💬 Начать чат", "🖼 Создать картинку"],
+        ["👤 Профиль", "📜 История"],
+        ["💎 Купить подписку", "❓ Помощь"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_payment_menu():
+    keyboard = [
+        [InlineKeyboardButton("💳 Карта Мир", callback_data="pay_card")],
+        [InlineKeyboardButton("🥝 Qiwi", callback_data="pay_qiwi")],
+        [InlineKeyboardButton("🏦 Telegram Payments", callback_data="pay_telegram")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def get_user_context(user_id):
     cursor.execute("SELECT role, history, free_requests, subscription_end FROM contexts WHERE user_id=?", (user_id,))
     row = cursor.fetchone()
@@ -73,29 +89,58 @@ def has_access(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я платный AI-бот на GPT-3.5.\n"
-        "Первые 10 сообщений бесплатно.\n"
-        "Подписка после — 30₽/мес.\n"
-        "Команды:\n"
-        "/help - помощь\n"
-        "/history - последние сообщения\n"
-        "/subscribe_telegram - Telegram Payments\n"
-        "/pay_qiwi - оплата через Qiwi\n"
-        "/pay_card - оплата на карту Мир\n"
+        "Выберите нужное действие в меню ниже:",
+        reply_markup=get_main_menu()
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Команды:\n"
-        "/start - запуск бота\n"
-        "/help - помощь\n"
-        "/profile - личный кабинет\n"
-        "/history - последние 20 сообщений\n"
-        "/subscribe_telegram - Telegram Payments\n"
-        "/pay_qiwi - оплата через Qiwi\n"
-        "/pay_card - оплата на карту Мир"
+        "Я могу отвечать на вопросы и генерировать картинки.\n"
+        "Воспользуйтесь кнопками меню для навигации.",
+        reply_markup=get_main_menu()
     )
 
-async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Выберите удобный способ оплаты подписки (30₽/мес):",
+        reply_markup=get_payment_menu()
+    )
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "pay_card":
+        await pay_card(update, context)
+    elif query.data == "pay_qiwi":
+        await pay_qiwi(update, context)
+    elif query.data == "pay_telegram":
+        await subscribe_telegram(update, context)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    text = update.message.text
+
+    if text == "👤 Профиль":
+        await profile_command(update, context)
+        return
+    elif text == "📜 История":
+        await history_command(update, context)
+        return
+    elif text == "💎 Купить подписку":
+        await subscribe_menu(update, context)
+        return
+    elif text == "❓ Помощь":
+        await help_command(update, context)
+        return
+    elif text == "💬 Начать чат":
+        await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!")
+        return
+    elif text == "🖼 Создать картинку":
+        await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.")
+        return
+
+    role, history, free_requests, subscription_end = get_user_context(user_id)
     user_id = str(update.message.from_user.id)
     _, _, free_requests, subscription_end = get_user_context(user_id)
     
@@ -183,8 +228,9 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
 
 # --- Qiwi ---
 async def pay_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    await update.message.reply_text(
+    user_id = str((update.message or update.callback_query).from_user.id)
+    msg_target = update.message or update.callback_query.message
+    await msg_target.reply_text(
         f"Переведите 30₽ на Qiwi кошелек: {QIWI_PHONE}\n"
         f"ВАЖНО: В комментарии к платежу ОБЯЗАТЕЛЬНО укажите ваш ID: {user_id}\n\n"
         "После перевода используйте команду /check_qiwi для автоматической активации."
@@ -235,7 +281,8 @@ async def check_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Карта Мир ---
 async def pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    msg_target = update.message or update.callback_query.message
+    await msg_target.reply_text(
         f"Переведите {CARD_MIR_AMOUNT}₽ на карту: {CARD_MIR_NUMBER}\n"
         "После перевода используйте команду /check_card для активации подписки."
     )
@@ -319,6 +366,9 @@ def main():
     app.add_handler(CommandHandler("admin_stats", admin_stats))
     app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
 
+    # Обработчики оплаты
+    app.add_handler(CallbackQueryHandler(button_handler))
+    
     app.add_handler(CommandHandler("subscribe_telegram", subscribe_telegram))
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
