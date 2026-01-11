@@ -27,8 +27,6 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN")
-QIWI_API_KEY = os.environ.get("QIWI_API_KEY")  # токен API для Qiwi
-QIWI_PHONE = os.environ.get("QIWI_PHONE")     # номер кошелька
 
 CARD_MIR_NUMBER = os.environ.get("CARD_MIR_NUMBER")  # карта Мир
 CARD_MIR_AMOUNT = int(os.environ.get("CARD_MIR_AMOUNT", 30))  # сумма перевода в рублях
@@ -100,8 +98,7 @@ def get_main_menu():
 
 def get_payment_menu():
     keyboard = [
-        [InlineKeyboardButton("💳 Банковская карта (ЮКасса)", callback_data="pay_yookassa")],
-        [InlineKeyboardButton("🥝 Qiwi", callback_data="pay_qiwi")]
+        [InlineKeyboardButton("💳 Банковская карта (ЮКасса)", callback_data="pay_yookassa")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -179,8 +176,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "pay_yookassa":
         await pay_yookassa(update, context)
-    elif query.data == "pay_qiwi":
-        await pay_qiwi(update, context)
     elif query.data == "pay_telegram":
         await subscribe_telegram(update, context)
 
@@ -294,60 +289,6 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     save_user_context(user_id, role, history, free_requests, subscription_end)
     await update.message.reply_text("Оплата через Telegram успешна! Подписка активирована на 30 дней.")
 
-# --- Qiwi ---
-async def pay_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str((update.message or update.callback_query).from_user.id)
-    msg_target = update.message or update.callback_query.message
-    await msg_target.reply_text(
-        f"Переведите 30₽ на Qiwi кошелек: {QIWI_PHONE}\n"
-        f"ВАЖНО: В комментарии к платежу ОБЯЗАТЕЛЬНО укажите ваш ID: {user_id}\n\n"
-        "После перевода используйте команду /check_qiwi для автоматической активации."
-    )
-
-async def check_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    if not QIWI_API_KEY or not QIWI_PHONE:
-        await update.message.reply_text("Ошибка: Настройки Qiwi не заданы администратором.")
-        return
-
-    try:
-        headers = {"Authorization": f"Bearer {QIWI_API_KEY}", "Accept": "application/json"}
-        url = f"https://edge.qiwi.com/payment-history/v2/persons/{QIWI_PHONE}/payments?rows=20"
-        resp = requests.get(url, headers=headers)
-        
-        if resp.status_code != 200:
-            await update.message.reply_text(f"Ошибка API Qiwi: {resp.status_code}")
-            return
-            
-        data = resp.json()
-        found = False
-        for item in data.get("data", []):
-            # Проверяем сумму, валюту (643 - рубль) и комментарий
-            amount = item.get("sum", {}).get("amount")
-            comment = item.get("comment")
-            status = item.get("status")
-            
-            if amount == 30 and comment == user_id and status == "SUCCESS":
-                found = True
-                break
-                
-        if found:
-            role, history, free_requests, _ = get_user_context(user_id)
-            subscription_end = time.time() + 30*24*3600
-            save_user_context(user_id, role, history, free_requests, subscription_end)
-            await update.message.reply_text("Оплата через Qiwi подтверждена! Подписка активирована на 30 дней.")
-        else:
-            await update.message.reply_text(
-                "Платеж не найден. Убедитесь, что:\n"
-                "1. Вы перевели ровно 30₽.\n"
-                f"2. Вы указали в комментарии ID: {user_id}\n"
-                "3. Платеж уже прошел (статус 'Успешно')."
-            )
-    except Exception as e:
-        logging.error(f"Qiwi check error: {e}")
-        await update.message.reply_text("Произошла ошибка при проверке Qiwi. Попробуйте позже.")
-
-# --- Карта Мир ---
 # --- YooKassa платежи ---
 async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_target = update.message or update.callback_query.message
@@ -471,7 +412,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if not has_access(user_id):
-        await update.message.reply_text("Первые 10 сообщений закончились. Используй /subscribe_telegram, /pay_qiwi или /pay_card.")
+        await update.message.reply_text("Первые 10 сообщений закончились. Используй /subscribe для оформления подписки.")
         return
 
     messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
@@ -571,8 +512,6 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
-    app.add_handler(CommandHandler("pay_qiwi", pay_qiwi))
-    app.add_handler(CommandHandler("check_qiwi", check_qiwi))
 
     app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
 
@@ -586,7 +525,7 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    print("Платный бот с Telegram Payments, Qiwi и картой Мир запущен...")
+    print("Платный бот с оплатой через ЮКассу запущен...")
     app.run_polling()
 
 if __name__ == "__main__":
