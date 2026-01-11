@@ -86,13 +86,6 @@ def has_access(user_id):
     return free_requests > 0 or subscription_end > time.time()
 
 # --- Команды ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Я твой продвинутый AI-помощник.\n"
-        "Я могу отвечать на твои вопросы и создавать уникальные изображения.\n\n"
-        "Выберите нужное действие в меню ниже:",
-        reply_markup=get_main_menu()
-    )
 
 async def chat_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
