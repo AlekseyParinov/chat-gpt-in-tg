@@ -122,32 +122,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
 
-    if text == "👤 Профиль":
-        role, history, free_requests, subscription_end = get_user_context(user_id)
-        status = "Активна" if subscription_end > time.time() else "Неактивна"
-        sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
-        await update.message.reply_text(
-            f"👤 Профиль\n\n"
-            f"Ваш ID: {user_id}\n"
-            f"Остаток бесплатных запросов: {free_requests}\n"
-            f"Подписка: {status}\n"
-            f"Дата окончания: {sub_text}"
-        )
-        return
-    elif text == "📜 История":
-        await history_command(update, context)
-        return
-    elif text == "💎 Купить подписку":
-        await subscribe_menu(update, context)
-        return
-    elif text == "❓ Помощь":
-        await help_command(update, context)
-        return
-    elif text == "💬 Начать чат":
-        await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!")
-        return
-    elif text == "🖼 Создать картинку":
-        await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.")
+    # Если это простое нажатие кнопки меню, не вызываем OpenAI
+    if text in ["👤 Профиль", "📜 История", "💎 Купить подписку", "❓ Помощь", "💬 Начать чат", "🖼 Создать картинку"]:
+        if text == "👤 Профиль":
+            role, history, free_requests, subscription_end = get_user_context(user_id)
+            status = "Активна" if subscription_end > time.time() else "Неактивна"
+            sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
+            await update.message.reply_text(
+                f"👤 Профиль\n\n"
+                f"Ваш ID: {user_id}\n"
+                f"Остаток бесплатных запросов: {free_requests}\n"
+                f"Подписка: {status}\n"
+                f"Дата окончания: {sub_text}"
+            )
+        elif text == "📜 История":
+            await history_command(update, context)
+        elif text == "💎 Купить подписку":
+            await subscribe_menu(update, context)
+        elif text == "❓ Помощь":
+            await help_command(update, context)
+        elif text == "💬 Начать чат":
+            await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!")
+        elif text == "🖼 Создать картинку":
+            await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.")
         return
 
     role, history, free_requests, subscription_end = get_user_context(user_id)
