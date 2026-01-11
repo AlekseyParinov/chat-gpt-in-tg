@@ -1,3 +1,7 @@
 python-telegram-bot==20.3
 openai
 requests
+openai
+python-telegram-bot==20.3
+requests
+telegram

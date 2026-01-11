@@ -8,12 +8,12 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
     filters, PreCheckoutQueryHandler
 )
-import openai
+from openai import OpenAI
 from io import BytesIO
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# --- Переменные окружения Railway ---
+# --- Переменные окружения ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 PAYMENT_PROVIDER_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN")
@@ -23,7 +23,8 @@ QIWI_PHONE = os.environ.get("QIWI_PHONE")     # номер кошелька
 CARD_MIR_NUMBER = os.environ.get("CARD_MIR_NUMBER")  # карта Мир
 CARD_MIR_AMOUNT = int(os.environ.get("CARD_MIR_AMOUNT", 30))  # сумма перевода в рублях
 
-openai.api_key = OPENAI_API_KEY
+# Initialize OpenAI client
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # --- База ---
 conn = sqlite3.connect("user_contexts.db", check_same_thread=False)
@@ -182,13 +183,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
     try:
-        response = openai.ChatCompletion.create(
+        response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages,
             max_tokens=300,
             temperature=0.7
         )
-        answer = response['choices'][0]['message']['content']
+        answer = response.choices[0].message.content
         await update.message.reply_text(answer)
 
         history.append({"role": "user", "content": text})
@@ -214,8 +215,8 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        response = openai.Image.create(prompt=prompt, n=1, size="512x512")
-        image_url = response['data'][0]['url']
+        response = openai_client.images.generate(prompt=prompt, n=1, size="512x512")
+        image_url = response.data[0].url
         image_data = requests.get(image_url).content
         await update.message.reply_photo(photo=BytesIO(image_data))
         role, history, free_requests, subscription_end = get_user_context(user_id)
