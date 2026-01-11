@@ -4,7 +4,6 @@ import time
 import os
 import requests
 import threading
-import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -59,12 +58,9 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def run_health_check_server():
     server_address = ('0.0.0.0', 5000)
-    try:
-        httpd = HTTPServer(server_address, HealthCheckHandler)
-        print("Health check server started on port 5000")
-        httpd.serve_forever()
-    except Exception as e:
-        print(f"Health check server error: {e}")
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    print("Health check server started on port 5000")
+    httpd.serve_forever()
 
 def get_main_menu():
     keyboard = [
@@ -104,20 +100,8 @@ def save_user_context(user_id, role, history, free_requests, subscription_end):
     conn.commit()
 
 def has_access(user_id):
-    # Бесплатный доступ для избранных пользователей
-    try:
-        user_info = cursor.execute("SELECT username FROM contexts WHERE user_id=?", (user_id,)).fetchone()
-        # В этой версии username может не быть в таблице, так что проверим по ID или добавим логику имен
-        # Но проще всего добавить список разрешенных username и проверять в вызывающей функции
-        pass 
-    except:
-        pass
-
     _, _, free_requests, subscription_end = get_user_context(user_id)
     return free_requests > 0 or subscription_end > time.time()
-
-# Список VIP-пользователей
-VIP_USERNAMES = ["@adam0v_0", "@zeiszee", "@Leksi_yy", "adam0v_0", "zeiszee", "Leksi_yy"]
 
 # --- Команды ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -174,7 +158,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    username = update.message.from_user.username
     text = update.message.text
     
     # Если сообщение начинается с /, это команда, она обработается CommandHandler
@@ -184,18 +167,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Если мы дошли сюда, значит это обычное сообщение для ИИ
     role, history, free_requests, subscription_end = get_user_context(user_id)
     
-    # Проверка на VIP доступ
-    is_vip = False
-    if username:
-        # Убираем @ если он есть и приводим к нижнему регистру для надежности
-        clean_username = str(username).lstrip('@').lower()
-        vip_list = [str(v).lstrip('@').lower() for v in VIP_USERNAMES]
-        is_vip = clean_username in vip_list
-
-    # Добавляем инструкцию по форматированию в системную роль
-    clean_role = role + " ВАЖНО: Не используй LaTeX-разметку (символы \(, \), \[, \], $, {}). Пиши математические формулы обычным текстом, используя простые символы (^ для степени, * для умножения, / для деления)."
-
-    if not has_access(user_id) and not is_vip:
+    if not has_access(user_id):
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
         return
 
@@ -359,7 +331,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         response = openai_client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": clean_role}] + history + [{"role": "user", "content": text}],
+            messages=messages,
             max_tokens=300,
             temperature=0.7
         )
@@ -373,32 +345,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        logging.error(f"FATAL ERROR in handle_message: {error_msg}")
-        
-        # Информируем пользователя о типе ошибки для отладки, если это админ
-        if str(update.message.from_user.username) == ADMIN_USERNAME.lstrip('@'):
-             await update.message.reply_text(f"⚠️ Ошибка: {str(e)}")
-
-        await update.message.reply_text(
-            "Произошла ошибка при обработке сообщения. Попробуйте еще раз позже.",
-            reply_markup=get_main_menu()
-        )
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            await update.message.reply_text(
+                "🤖 Извините, сейчас я перегружен или у меня закончились ресурсы для обработки запросов. "
+                "Пожалуйста, попробуйте позже или обратитесь к администратору @adam0v_0.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(
+                "Произошла ошибка при обработке сообщения. Попробуйте еще раз позже.",
+                reply_markup=get_main_menu()
+            )
 
 # --- Генерация картинок ---
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    username = update.message.from_user.username
     _, _, free_requests, subscription_end = get_user_context(user_id)
-    
-    is_vip = False
-    if username:
-        clean_username = username.lstrip('@').lower()
-        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
-        is_vip = clean_username in vip_list
-
-    if not has_access(user_id) and not is_vip:
+    if not has_access(user_id):
         await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.")
         return
 
@@ -417,8 +381,6 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
-        import traceback
-        logging.error(f"Error in handle_message: {traceback.format_exc()}")
         error_msg = str(e)
         if "insufficient_quota" in error_msg or "429" in error_msg:
             await update.message.reply_text(
@@ -431,76 +393,6 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Произошла ошибка при генерации картинки. Попробуйте еще раз позже.",
                 reply_markup=get_main_menu()
             )
-
-# --- Генерация картинок ---
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    username = update.message.from_user.username
-    role, history, free_requests, subscription_end = get_user_context(user_id)
-    
-    is_vip = False
-    if username:
-        clean_username = username.lstrip('@').lower()
-        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
-        is_vip = clean_username in vip_list
-
-    if not has_access(user_id) and not is_vip:
-        await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
-        return
-
-    photo = update.message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
-    image_bytes = await file.download_as_bytearray()
-    
-    # Кодируем в base64 для OpenAI Vision
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
-    
-    caption = (update.message.caption or "Реши это задание на фото.") + " ВАЖНО: Не используй LaTeX-разметку. Пиши формулы обычным понятным текстом."
-    
-    try:
-        await update.message.reply_text("⏳ Анализирую фото, подождите...", reply_markup=get_main_menu())
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",  # Используем модель с поддержкой Vision
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": caption},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000
-        )
-        
-        answer = response.choices[0].message.content
-        await update.message.reply_text(answer, reply_markup=get_main_menu())
-        
-        # Сохраняем в историю (текстовое описание)
-        history.append({"role": "user", "content": f"[Фото]: {caption}"})
-        history.append({"role": "assistant", "content": answer})
-        history = history[-20:]
-        if free_requests > 0:
-            free_requests -= 1
-        save_user_context(user_id, role, history, free_requests, subscription_end)
-        
-    except Exception as e:
-        import traceback
-        logging.error(f"Error in handle_message: {traceback.format_exc()}")
-        error_msg = str(e)
-        if "insufficient_quota" in error_msg or "429" in error_msg:
-            await update.message.reply_text(
-                "🤖 Извините, сейчас у меня закончились ресурсы. Пожалуйста, попробуйте позже.",
-                reply_markup=get_main_menu()
-            )
-        else:
-            await update.message.reply_text(f"Произошла ошибка: {e}", reply_markup=get_main_menu())
 
 # --- Основная функция ---
 def main():
@@ -532,7 +424,6 @@ def main():
     app.add_handler(CommandHandler("confirm_card", confirm_card))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CommandHandler("image", generate_image))
 
     # Error handler
