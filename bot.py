@@ -122,12 +122,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
-    # Регулярные выражения для поиска кнопок (на случай лишних пробелов)
+    # Нормализуем текст: убираем пробелы и приводим к одному виду
+    normalized_text = text.strip()
     menu_buttons = ["👤 Профиль", "📜 История", "💎 Купить подписку", "❓ Помощь", "💬 Начать чат", "🖼 Создать картинку"]
     
     # Если это простое нажатие кнопки меню, не вызываем OpenAI
-    if text in menu_buttons:
-        if text == "👤 Профиль":
+    if normalized_text in menu_buttons:
+        if normalized_text == "👤 Профиль":
             role, history, free_requests, subscription_end = get_user_context(user_id)
             status = "Активна" if subscription_end > time.time() else "Неактивна"
             sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
@@ -139,20 +140,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Дата окончания: {sub_text}",
                 reply_markup=get_main_menu()
             )
-        elif text == "📜 История":
+        elif normalized_text == "📜 История":
             await history_command(update, context)
-        elif text == "💎 Купить подписку":
+        elif normalized_text == "💎 Купить подписку":
             await subscribe_menu(update, context)
-        elif text == "❓ Помощь":
+        elif normalized_text == "❓ Помощь":
             await help_command(update, context)
-        elif text == "💬 Начать чат":
+        elif normalized_text == "💬 Начать чат":
             await update.message.reply_text("Просто напишите мне любое сообщение, и я отвечу!", reply_markup=get_main_menu())
-        elif text == "🖼 Создать картинку":
+        elif normalized_text == "🖼 Создать картинку":
             await update.message.reply_text("Используйте команду /image <ваш запрос>, чтобы создать картинку.", reply_markup=get_main_menu())
         return
 
     # Проверка доступа ПЕРЕД вызовом OpenAI
     role, history, free_requests, subscription_end = get_user_context(user_id)
+    
+    if not has_access(user_id):
+        await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
+        return
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
