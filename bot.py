@@ -46,9 +46,9 @@ conn.commit()
 # --- Хелперы ---
 def get_main_menu():
     keyboard = [
-        ["/chat_start", "/image_start"],
-        ["/profile", "/history"],
-        ["/subscribe", "/help"]
+        ["💬 Начать чат", "🖼 Создать картинку"],
+        ["👤 Профиль", "📜 История"],
+        ["💎 Подписка", "❓ Помощь"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -142,6 +142,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
+    # Красивые названия кнопок
+    menu_mapping = {
+        "💬 Начать чат": chat_start,
+        "🖼 Создать картинку": image_start,
+        "👤 Профиль": profile_command,
+        "📜 История": history_command,
+        "💎 Подписка": subscribe_menu,
+        "❓ Помощь": help_command
+    }
+    
+    if text in menu_mapping:
+        await menu_mapping[text](update, context)
+        return
+
     # Если сообщение начинается с /, это команда, она обработается CommandHandler
     if text.startswith('/'):
         return
