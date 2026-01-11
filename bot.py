@@ -142,7 +142,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     text = update.message.text
     
-    # Красивые названия кнопок
+    # Нормализуем текст (удаляем лишние пробелы)
+    clean_text = text.strip()
+    
+    # Красивые названия кнопок - СТРОГОЕ СООТВЕТСТВИЕ
+    # Используем словарь для сопоставления текста кнопки с функцией
     menu_mapping = {
         "💬 Начать чат": chat_start,
         "🖼 Создать картинку": image_start,
@@ -152,8 +156,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❓ Помощь": help_command
     }
     
-    if text in menu_mapping:
-        await menu_mapping[text](update, context)
+    # Проверяем, является ли сообщение нажатием на кнопку
+    if clean_text in menu_mapping:
+        await menu_mapping[clean_text](update, context)
         return
 
     # Если сообщение начинается с /, это команда, она обработается CommandHandler
