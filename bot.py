@@ -114,7 +114,7 @@ def has_access(user_id):
     return free_requests > 0 or subscription_end > time.time()
 
 # Список VIP-пользователей
-VIP_USERNAMES = ["@adam0v_0", "@zeiszee", "@Leksei_yy", "adam0v_0", "zeiszee", "Leksei_yy"]
+VIP_USERNAMES = ["@adam0v_0", "@zeiszee", "@Leksi_yy", "adam0v_0", "zeiszee", "Leksi_yy"]
 
 # --- Команды ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
