@@ -4,6 +4,7 @@ import time
 import os
 import requests
 import threading
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -394,6 +395,67 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_menu()
             )
 
+# --- Генерация картинок ---
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    role, history, free_requests, subscription_end = get_user_context(user_id)
+    
+    if not has_access(user_id):
+        await update.message.reply_text("Первые 10 сообщений закончились. Используй оплату для доступа.", reply_markup=get_main_menu())
+        return
+
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+    image_bytes = await file.download_as_bytearray()
+    
+    # Кодируем в base64 для OpenAI Vision
+    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    
+    caption = update.message.caption or "Реши это задание на фото."
+    
+    try:
+        await update.message.reply_text("⏳ Анализирую фото, подождите...", reply_markup=get_main_menu())
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",  # Используем модель с поддержкой Vision
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": caption},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000
+        )
+        
+        answer = response.choices[0].message.content
+        await update.message.reply_text(answer, reply_markup=get_main_menu())
+        
+        # Сохраняем в историю (текстовое описание)
+        history.append({"role": "user", "content": f"[Фото]: {caption}"})
+        history.append({"role": "assistant", "content": answer})
+        history = history[-20:]
+        if free_requests > 0:
+            free_requests -= 1
+        save_user_context(user_id, role, history, free_requests, subscription_end)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            await update.message.reply_text(
+                "🤖 Извините, сейчас у меня закончились ресурсы. Пожалуйста, попробуйте позже.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(f"Произошла ошибка: {e}", reply_markup=get_main_menu())
+
 # --- Основная функция ---
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
@@ -424,6 +486,7 @@ def main():
     app.add_handler(CommandHandler("confirm_card", confirm_card))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(CommandHandler("image", generate_image))
 
     # Error handler
