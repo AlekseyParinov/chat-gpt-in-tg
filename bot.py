@@ -188,8 +188,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_vip = False
     if username:
         # Убираем @ если он есть и приводим к нижнему регистру для надежности
-        clean_username = username.lstrip('@').lower()
-        vip_list = [v.lstrip('@').lower() for v in VIP_USERNAMES]
+        clean_username = str(username).lstrip('@').lower()
+        vip_list = [str(v).lstrip('@').lower() for v in VIP_USERNAMES]
         is_vip = clean_username in vip_list
 
     if not has_access(user_id) and not is_vip:
