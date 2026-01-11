@@ -59,9 +59,12 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def run_health_check_server():
     server_address = ('0.0.0.0', 5000)
-    httpd = HTTPServer(server_address, HealthCheckHandler)
-    print("Health check server started on port 5000")
-    httpd.serve_forever()
+    try:
+        httpd = HTTPServer(server_address, HealthCheckHandler)
+        print("Health check server started on port 5000")
+        httpd.serve_forever()
+    except Exception as e:
+        print(f"Health check server error: {e}")
 
 def get_main_menu():
     keyboard = [
@@ -370,6 +373,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
+        import traceback
+        logging.error(f"Error in handle_message: {traceback.format_exc()}")
         error_msg = str(e)
         if "insufficient_quota" in error_msg or "429" in error_msg:
             await update.message.reply_text(
@@ -414,6 +419,8 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_requests -= 1
         save_user_context(user_id, role, history, free_requests, subscription_end)
     except Exception as e:
+        import traceback
+        logging.error(f"Error in handle_message: {traceback.format_exc()}")
         error_msg = str(e)
         if "insufficient_quota" in error_msg or "429" in error_msg:
             await update.message.reply_text(
@@ -486,6 +493,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_user_context(user_id, role, history, free_requests, subscription_end)
         
     except Exception as e:
+        import traceback
+        logging.error(f"Error in handle_message: {traceback.format_exc()}")
         error_msg = str(e)
         if "insufficient_quota" in error_msg or "429" in error_msg:
             await update.message.reply_text(
