@@ -65,7 +65,7 @@ def run_health_check_server():
 def get_main_menu():
     keyboard = [
         ["/chat_start"],
-        ["/profile", "/history"],
+        ["/profile"],
         ["/subscribe", "/help"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
