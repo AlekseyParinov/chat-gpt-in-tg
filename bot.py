@@ -4,6 +4,7 @@ import time
 import os
 import requests
 import threading
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -12,6 +13,13 @@ from telegram.ext import (
 )
 from openai import OpenAI
 from io import BytesIO
+
+# YooKassa imports
+try:
+    from yookassa import Configuration, Payment
+    YOOKASSA_AVAILABLE = True
+except ImportError:
+    YOOKASSA_AVAILABLE = False
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -24,6 +32,15 @@ QIWI_PHONE = os.environ.get("QIWI_PHONE")     # номер кошелька
 
 CARD_MIR_NUMBER = os.environ.get("CARD_MIR_NUMBER")  # карта Мир
 CARD_MIR_AMOUNT = int(os.environ.get("CARD_MIR_AMOUNT", 30))  # сумма перевода в рублях
+
+# YooKassa settings
+YOOKASSA_SHOP_ID = os.environ.get("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.environ.get("YOOKASSA_SECRET_KEY")
+
+# Configure YooKassa
+if YOOKASSA_AVAILABLE and YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY:
+    Configuration.account_id = YOOKASSA_SHOP_ID
+    Configuration.secret_key = YOOKASSA_SECRET_KEY
 
 ADMIN_ID = os.environ.get("ADMIN_ID") # ID администратора
 ADMIN_USERNAME = "@adam0v_0" # Username администратора
@@ -41,6 +58,17 @@ CREATE TABLE IF NOT EXISTS contexts (
     history TEXT,
     free_requests INTEGER,
     subscription_end REAL
+)
+""")
+
+# Таблица для хранения платежей YooKassa
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS yookassa_payments (
+    payment_id TEXT PRIMARY KEY,
+    user_id TEXT,
+    amount REAL,
+    status TEXT,
+    created_at REAL
 )
 """)
 conn.commit()
@@ -72,7 +100,7 @@ def get_main_menu():
 
 def get_payment_menu():
     keyboard = [
-        [InlineKeyboardButton("💳 Карта Мир", callback_data="pay_card")],
+        [InlineKeyboardButton("💳 Банковская карта (ЮКасса)", callback_data="pay_yookassa")],
         [InlineKeyboardButton("🥝 Qiwi", callback_data="pay_qiwi")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -149,8 +177,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data == "pay_card":
-        await pay_card(update, context)
+    if query.data == "pay_yookassa":
+        await pay_yookassa(update, context)
     elif query.data == "pay_qiwi":
         await pay_qiwi(update, context)
     elif query.data == "pay_telegram":
@@ -320,24 +348,121 @@ async def check_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Произошла ошибка при проверке Qiwi. Попробуйте позже.")
 
 # --- Карта Мир ---
-async def pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- YooKassa платежи ---
+async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_target = update.message or update.callback_query.message
-    await msg_target.reply_text(
-        f"Переведите {CARD_MIR_AMOUNT}₽ на карту: {CARD_MIR_NUMBER}\n"
-        "После перевода используйте команду /check_card для активации подписки."
-    )
+    user_id = str((update.message or update.callback_query).from_user.id)
+    
+    if not YOOKASSA_AVAILABLE or not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+        await msg_target.reply_text(
+            "Оплата через ЮКассу временно недоступна. Пожалуйста, используйте другой способ оплаты или обратитесь к @adam0v_0.",
+            reply_markup=get_main_menu()
+        )
+        return
+    
+    try:
+        idempotence_key = str(uuid.uuid4())
+        payment = Payment.create({
+            "amount": {
+                "value": "30.00",
+                "currency": "RUB"
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": "https://t.me/your_bot"
+            },
+            "capture": True,
+            "description": f"Подписка на бота (30 дней) для пользователя {user_id}",
+            "metadata": {
+                "user_id": user_id
+            }
+        }, idempotence_key)
+        
+        # Сохраняем платеж в базу
+        cursor.execute(
+            "INSERT OR REPLACE INTO yookassa_payments VALUES (?, ?, ?, ?, ?)",
+            (payment.id, user_id, 30.0, payment.status, time.time())
+        )
+        conn.commit()
+        
+        payment_url = payment.confirmation.confirmation_url
+        
+        await msg_target.reply_text(
+            f"💳 Для оплаты подписки (30₽) перейдите по ссылке:\n\n{payment_url}\n\n"
+            "После оплаты используйте команду /check_payment для активации подписки.",
+            reply_markup=get_main_menu()
+        )
+    except Exception as e:
+        logging.error(f"YooKassa payment error: {e}")
+        await msg_target.reply_text(
+            "Произошла ошибка при создании платежа. Попробуйте позже или обратитесь к @adam0v_0.",
+            reply_markup=get_main_menu()
+        )
 
-async def check_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def check_yookassa_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    await update.message.reply_text(
-        f"Для активации подписки после перевода {CARD_MIR_AMOUNT}₽ на карту {CARD_MIR_NUMBER}, "
-        "пожалуйста, пришлите скриншот чека об оплате. Администратор проверит его и активирует доступ."
+    
+    if not YOOKASSA_AVAILABLE or not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+        await update.message.reply_text("Проверка платежей ЮКассы недоступна.", reply_markup=get_main_menu())
+        return
+    
+    # Получаем последний платеж пользователя
+    cursor.execute(
+        "SELECT payment_id FROM yookassa_payments WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+        (user_id,)
     )
-
-async def confirm_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Эта команда теперь предназначена только для администратора (нужно добавить проверку ID)
-    # Для примера оставим как есть, но предупредим пользователя
-    await update.message.reply_text("Команда доступна только администратору для ручной активации.")
+    row = cursor.fetchone()
+    
+    if not row:
+        await update.message.reply_text(
+            "У вас нет ожидающих платежей. Используйте /subscribe для оплаты.",
+            reply_markup=get_main_menu()
+        )
+        return
+    
+    payment_id = row[0]
+    
+    try:
+        payment = Payment.find_one(payment_id)
+        
+        if payment.status == "succeeded":
+            # Платеж успешен - активируем подписку
+            role, history, free_requests, _ = get_user_context(user_id)
+            subscription_end = time.time() + 30*24*3600
+            save_user_context(user_id, role, history, free_requests, subscription_end)
+            
+            # Обновляем статус в базе
+            cursor.execute(
+                "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
+                ("succeeded", payment_id)
+            )
+            conn.commit()
+            
+            await update.message.reply_text(
+                "✅ Оплата подтверждена! Подписка активирована на 30 дней.",
+                reply_markup=get_main_menu()
+            )
+        elif payment.status == "pending":
+            await update.message.reply_text(
+                "⏳ Платеж еще обрабатывается. Пожалуйста, подождите и попробуйте снова через несколько минут.",
+                reply_markup=get_main_menu()
+            )
+        elif payment.status == "canceled":
+            await update.message.reply_text(
+                "❌ Платеж был отменен. Используйте /subscribe для новой попытки оплаты.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(
+                f"Статус платежа: {payment.status}. Если возникли проблемы, обратитесь к @adam0v_0.",
+                reply_markup=get_main_menu()
+            )
+    except Exception as e:
+        logging.error(f"YooKassa check error: {e}")
+        await update.message.reply_text(
+            "Произошла ошибка при проверке платежа. Попробуйте позже.",
+            reply_markup=get_main_menu()
+        )
 
 # --- Генерация текста GPT-3.5 ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -449,9 +574,7 @@ def main():
     app.add_handler(CommandHandler("pay_qiwi", pay_qiwi))
     app.add_handler(CommandHandler("check_qiwi", check_qiwi))
 
-    app.add_handler(CommandHandler("pay_card", pay_card))
-    app.add_handler(CommandHandler("check_card", check_card))
-    app.add_handler(CommandHandler("confirm_card", confirm_card))
+    app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
