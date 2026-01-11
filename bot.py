@@ -24,6 +24,7 @@ CARD_MIR_NUMBER = os.environ.get("CARD_MIR_NUMBER")  # карта Мир
 CARD_MIR_AMOUNT = int(os.environ.get("CARD_MIR_AMOUNT", 30))  # сумма перевода в рублях
 
 ADMIN_ID = os.environ.get("ADMIN_ID") # ID администратора
+ADMIN_USERNAME = "@adam0v_0" # Username администратора
 
 # Initialize OpenAI client
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
@@ -152,7 +153,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role, history, free_requests, subscription_end = get_user_context(user_id)
 
 async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.message.from_user.id) != ADMIN_ID:
+    user = update.message.from_user
+    if str(user.id) != ADMIN_ID and user.username != "adam0v_0":
         return
     
     cursor.execute("SELECT COUNT(*) FROM contexts")
@@ -168,7 +170,8 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.message.from_user.id) != ADMIN_ID:
+    user = update.message.from_user
+    if str(user.id) != ADMIN_ID and user.username != "adam0v_0":
         return
     
     msg = " ".join(context.args)
