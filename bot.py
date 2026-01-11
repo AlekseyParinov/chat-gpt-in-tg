@@ -3,6 +3,8 @@ import sqlite3
 import time
 import os
 import requests
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -44,6 +46,22 @@ CREATE TABLE IF NOT EXISTS contexts (
 conn.commit()
 
 # --- Хелперы ---
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        return
+
+def run_health_check_server():
+    server_address = ('0.0.0.0', 5000)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    print("Health check server started on port 5000")
+    httpd.serve_forever()
+
 def get_main_menu():
     keyboard = [
         ["/chat_start", "/image_start"],
@@ -420,4 +438,8 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+    # Start health check server in a separate thread
+    health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
+    health_check_thread.start()
+    
     main()
