@@ -127,28 +127,55 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
 
 # --- Qiwi ---
 async def pay_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
     await update.message.reply_text(
         f"Переведите 30₽ на Qiwi кошелек: {QIWI_PHONE}\n"
-        "После перевода используйте команду /check_qiwi для активации подписки."
+        f"ВАЖНО: В комментарии к платежу ОБЯЗАТЕЛЬНО укажите ваш ID: {user_id}\n\n"
+        "После перевода используйте команду /check_qiwi для автоматической активации."
     )
 
 async def check_qiwi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
-    headers = {"Authorization": f"Bearer {QIWI_API_KEY}"}
-    url = f"https://edge.qiwi.com/payment-history/v2/persons/{QIWI_PHONE}/payments?rows=10"
-    resp = requests.get(url, headers=headers).json()
-    found = False
-    for item in resp.get("data", []):
-        if item.get("sum", {}).get("amount") == 30 and item.get("comment") == user_id:
-            found = True
-            break
-    if found:
-        role, history, free_requests, _ = get_user_context(user_id)
-        subscription_end = time.time() + 30*24*3600
-        save_user_context(user_id, role, history, free_requests, subscription_end)
-        await update.message.reply_text("Оплата через Qiwi успешна! Подписка активирована на 30 дней.")
-    else:
-        await update.message.reply_text("Оплата не найдена. Проверьте перевод и оставьте свой ID в комментарии платежа.")
+    if not QIWI_API_KEY or not QIWI_PHONE:
+        await update.message.reply_text("Ошибка: Настройки Qiwi не заданы администратором.")
+        return
+
+    try:
+        headers = {"Authorization": f"Bearer {QIWI_API_KEY}", "Accept": "application/json"}
+        url = f"https://edge.qiwi.com/payment-history/v2/persons/{QIWI_PHONE}/payments?rows=20"
+        resp = requests.get(url, headers=headers)
+        
+        if resp.status_code != 200:
+            await update.message.reply_text(f"Ошибка API Qiwi: {resp.status_code}")
+            return
+            
+        data = resp.json()
+        found = False
+        for item in data.get("data", []):
+            # Проверяем сумму, валюту (643 - рубль) и комментарий
+            amount = item.get("sum", {}).get("amount")
+            comment = item.get("comment")
+            status = item.get("status")
+            
+            if amount == 30 and comment == user_id and status == "SUCCESS":
+                found = True
+                break
+                
+        if found:
+            role, history, free_requests, _ = get_user_context(user_id)
+            subscription_end = time.time() + 30*24*3600
+            save_user_context(user_id, role, history, free_requests, subscription_end)
+            await update.message.reply_text("Оплата через Qiwi подтверждена! Подписка активирована на 30 дней.")
+        else:
+            await update.message.reply_text(
+                "Платеж не найден. Убедитесь, что:\n"
+                "1. Вы перевели ровно 30₽.\n"
+                f"2. Вы указали в комментарии ID: {user_id}\n"
+                "3. Платеж уже прошел (статус 'Успешно')."
+            )
+    except Exception as e:
+        logging.error(f"Qiwi check error: {e}")
+        await update.message.reply_text("Произошла ошибка при проверке Qiwi. Попробуйте позже.")
 
 # --- Карта Мир ---
 async def pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
