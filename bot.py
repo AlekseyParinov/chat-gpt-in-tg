@@ -330,12 +330,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=messages,
             temperature=0.7
         )
         answer = response.choices[0].message.content
-        await update.message.reply_text(answer)
+        
+        # Разбиваем длинные сообщения, если они превышают лимит Telegram (4096 символов)
+        if len(answer) > 4000:
+            for i in range(0, len(answer), 4000):
+                chunk = answer[i:i+4000]
+                if chunk:
+                    await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(answer)
 
         history.append({"role": "user", "content": text})
         history.append({"role": "assistant", "content": answer})
