@@ -204,12 +204,34 @@ async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = 0
     for user in users:
         try:
+            # Отправляем сообщение пользователю
             await context.bot.send_message(chat_id=user[0], text=msg)
             count += 1
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error sending message to {user[0]}: {e}")
             continue
             
     await update.message.reply_text(f"✅ Рассылка завершена. Отправлено {count} пользователям.")
+
+async def activate_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    if str(user.id) != ADMIN_ID and user.username != "adam0v_0":
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Использование: /activate_sub <user_id>")
+        return
+        
+    target_user_id = context.args[0]
+    role, history, free_requests, _ = get_user_context(target_user_id)
+    subscription_end = time.time() + 30*24*3600
+    save_user_context(target_user_id, role, history, free_requests, subscription_end)
+    
+    await update.message.reply_text(f"✅ Подписка для {target_user_id} активирована на 30 дней.")
+    try:
+        await context.bot.send_message(chat_id=target_user_id, text="🌟 Ваша подписка активирована на 30 дней! Приятного использования.")
+    except Exception:
+        pass
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
@@ -415,6 +437,7 @@ def main():
 
     app.add_handler(CommandHandler("admin_stats", admin_stats))
     app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
+    app.add_handler(CommandHandler("activate_sub", activate_subscription))
 
     # Обработчики оплаты
     app.add_handler(CallbackQueryHandler(button_handler))
