@@ -64,7 +64,7 @@ def run_health_check_server():
 
 def get_main_menu():
     keyboard = [
-        ["/chat_start", "/image_start"],
+        ["/chat_start"],
         ["/profile", "/history"],
         ["/subscribe", "/help"]
     ]
@@ -107,7 +107,7 @@ def has_access(user_id):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я твой продвинутый AI-помощник.\n"
-        "Я могу отвечать на твои вопросы и создавать уникальные изображения.\n\n"
+        "Я могу отвечать на твои вопросы.\n\n"
         "Выберите нужное действие в меню ниже:",
         reply_markup=get_main_menu()
     )
@@ -134,7 +134,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Я могу отвечать на вопросы и генерировать картинки.\n"
+        "Я могу отвечать на вопросы.\n"
         "Воспользуйтесь кнопками меню для навигации.",
         reply_markup=get_main_menu()
     )
@@ -454,7 +454,6 @@ def main():
     app.add_handler(CommandHandler("confirm_card", confirm_card))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CommandHandler("image", generate_image))
 
     # Error handler
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
