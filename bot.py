@@ -89,7 +89,8 @@ def has_access(user_id):
 # --- Команды ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я платный AI-бот на GPT-3.5.\n"
+        "Привет! Я твой продвинутый AI-помощник.\n"
+        "Я могу отвечать на твои вопросы и создавать уникальные изображения.\n\n"
         "Выберите нужное действие в меню ниже:",
         reply_markup=get_main_menu()
     )
