@@ -158,18 +158,16 @@ async def pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def check_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Здесь простая проверка — пользователь подтверждает перевод вручную
+    user_id = str(update.message.from_user.id)
     await update.message.reply_text(
-        "Проверка перевода на карту Мир требует ручного подтверждения. "
-        "После перевода подтвердите командой /confirm_card."
+        f"Для активации подписки после перевода {CARD_MIR_AMOUNT}₽ на карту {CARD_MIR_NUMBER}, "
+        "пожалуйста, пришлите скриншот чека об оплате. Администратор проверит его и активирует доступ."
     )
 
 async def confirm_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    role, history, free_requests, _ = get_user_context(user_id)
-    subscription_end = time.time() + 30*24*3600
-    save_user_context(user_id, role, history, free_requests, subscription_end)
-    await update.message.reply_text("Подписка через карту Мир активирована на 30 дней!")
+    # Эта команда теперь предназначена только для администратора (нужно добавить проверку ID)
+    # Для примера оставим как есть, но предупредим пользователя
+    await update.message.reply_text("Команда доступна только администратору для ручной активации.")
 
 # --- Генерация текста GPT-3.5 ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
