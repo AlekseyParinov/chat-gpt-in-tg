@@ -77,6 +77,34 @@ conn.commit()
 # --- Глобальная переменная для Telegram бота ---
 telegram_bot = None
 
+# --- Умный выбор модели ---
+def choose_model(text: str) -> str:
+    """
+    Выбирает модель в зависимости от сложности вопроса.
+    GPT-4o для сложных задач, GPT-4o-mini для простых.
+    """
+    text_lower = text.lower()
+    
+    complex_keywords = [
+        'код', 'code', 'python', 'javascript', 'программ', 'функци', 'алгоритм',
+        'математик', 'math', 'формул', 'уравнен', 'интеграл', 'производн', 'вычисл',
+        'анализ', 'исследова', 'сравн', 'объясни подробно', 'разбер',
+        'напиши код', 'создай программ', 'реши задач', 'докажи',
+        'sql', 'база данных', 'api', 'json', 'html', 'css',
+        'физик', 'химия', 'биолог', 'научн',
+        'перевод', 'translate', 'english', 'essay', 'сочинен',
+        'стратег', 'план', 'бизнес', 'маркетинг'
+    ]
+    
+    for keyword in complex_keywords:
+        if keyword in text_lower:
+            return "gpt-4o"
+    
+    if len(text) > 500:
+        return "gpt-4o"
+    
+    return "gpt-4o-mini"
+
 # --- Webhook handlers (aiohttp) ---
 async def handle_health(request):
     return web.json_response({"status": "running", "bot": "active"})
@@ -553,9 +581,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     math_instruction = "ВАЖНО: Никогда не используй LaTeX (\\[, \\], $, $$, \\frac, \\sqrt и т.д.). Пиши формулы только простым текстом с Unicode: √ для корня, ² ³ для степеней, × для умножения, ÷ для деления, ≈ для приблизительно равно. Пример правильного ответа: v = √(50² + 15²) = √2725 ≈ 52.2 м/с"
     system_content = f"{role}\n\n{math_instruction}"
     messages = [{"role": "system", "content": system_content}] + history + [{"role": "user", "content": text}]
+    
+    selected_model = choose_model(text)
+    logging.info(f"User {user_id}: using model {selected_model} for message")
+    
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model=selected_model,
             messages=messages,
             temperature=0.7
         )

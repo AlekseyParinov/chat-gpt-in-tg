@@ -9,10 +9,11 @@ A Telegram bot powered by GPT-4o that provides AI chat with text and photo analy
 - `user_contexts.db` - SQLite database for user data (auto-created)
 
 ## Features
-- GPT-4o text generation
+- Smart model routing: GPT-4o-mini for simple questions, GPT-4o for complex tasks (saves ~80% on API costs)
 - Photo analysis with GPT-4o Vision (send photo to get analysis/solve tasks)
 - First 10 messages free, then subscription required (30₽/month)
-- Payment via YooKassa (bank cards)
+- Payment via YooKassa (bank cards) with automatic activation
+- Background payment checker (every 30 seconds)
 - Admin commands for subscription management
 - User context/history persistence
 
