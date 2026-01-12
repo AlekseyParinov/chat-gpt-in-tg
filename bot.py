@@ -110,7 +110,7 @@ def get_user_context(user_id):
         role, history, free_requests, subscription_end = row
         return role, eval(history), free_requests, subscription_end
     else:
-        default_role = "Ты ассистент, который отвечает коротко и логично."
+        default_role = "Ты ассистент, который отвечает коротко и логично. Важно: никогда не используй LaTeX формулы (\\[ \\] или $ $). Пиши математические формулы простым текстом с Unicode символами: √ для корня, ² ³ для степеней, × для умножения, ÷ для деления, ≈ для приблизительно. Пример: v = √(50² + 15²) = √(2500 + 225) = √2725 ≈ 52.2 м/с"
         cursor.execute(
             "INSERT OR REPLACE INTO contexts VALUES (?,?,?,?,?)",
             (user_id, default_role, str([]), 10, 0)
