@@ -15,19 +15,28 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Telegram Bot"
+args = "Health Check"
 
 [[workflows.workflow]]
-name = "Telegram Bot"
+name = "Health Check"
 author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python bot.py"
+args = """
+python -c \"from http.server import HTTPServer, BaseHTTPRequestHandler
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot runs on production server')
+    def log_message(self, *args): pass
+print('Dev server on port 5000 - Bot runs only in production')
+HTTPServer(('0.0.0.0', 5000), H).serve_forever()\""""
 waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [deployment]
 deploymentTarget = "vm"
