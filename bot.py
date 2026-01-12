@@ -7,7 +7,8 @@ import threading
 import uuid
 import base64
 import json
-from flask import Flask, request as flask_request, jsonify
+import asyncio
+from aiohttp import web
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -76,18 +77,13 @@ conn.commit()
 # --- Глобальная переменная для Telegram бота ---
 telegram_bot = None
 
-# --- Flask приложение для webhook ---
-flask_app = Flask(__name__)
-flask_app.logger.setLevel(logging.INFO)
+# --- Webhook handlers (aiohttp) ---
+async def handle_health(request):
+    return web.json_response({"status": "running", "bot": "active"})
 
-@flask_app.route('/')
-def health_check():
-    return jsonify({"status": "running", "bot": "active"}), 200
-
-@flask_app.route('/yookassa-webhook', methods=['POST'])
-def yookassa_webhook():
+async def handle_yookassa_webhook(request):
     try:
-        data = flask_request.get_json()
+        data = await request.json()
         logging.info(f"Webhook received: {data.get('event') if data else 'no data'}")
         
         if data and data.get('event') == 'payment.succeeded':
@@ -137,45 +133,25 @@ def yookassa_webhook():
                     logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days")
                     
                     if telegram_bot:
-                        import asyncio
                         try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            
-                            async def send_notification():
-                                try:
-                                    await telegram_bot.send_message(
-                                        chat_id=int(user_id),
-                                        text=f"✅ Оплата получена! Подписка активирована на {days} дней."
-                                    )
-                                    logging.info(f"Notification sent to user {user_id}")
-                                except Exception as e:
-                                    logging.error(f"Failed to send notification to {user_id}: {e}")
-                            
-                            loop.run_until_complete(send_notification())
-                            loop.close()
+                            await telegram_bot.send_message(
+                                chat_id=int(user_id),
+                                text=f"✅ Оплата получена! Подписка активирована на {days} дней."
+                            )
+                            logging.info(f"Notification sent to user {user_id}")
                         except Exception as e:
-                            logging.error(f"Async notification error: {e}")
+                            logging.error(f"Failed to send notification to {user_id}: {e}")
                 
                 except Exception as db_error:
                     logging.error(f"Database error in webhook: {db_error}")
                 finally:
                     webhook_conn.close()
         
-        return jsonify({"status": "ok"}), 200
+        return web.json_response({"status": "ok"})
         
     except Exception as e:
         logging.error(f"Webhook error: {e}")
-        return jsonify({"status": "ok"}), 200
-
-def run_webhook_server():
-    try:
-        print("Flask webhook server starting on 0.0.0.0:5000...")
-        logging.info("Flask webhook server starting on 0.0.0.0:5000...")
-        flask_app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
-    except Exception as e:
-        print(f"Flask server error: {e}")
-        logging.error(f"Flask server error: {e}")
+        return web.json_response({"status": "ok"})
 
 def get_main_menu():
     keyboard = [
@@ -724,55 +700,64 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 # --- Основная функция ---
-def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("chat_start", chat_start))
-    app.add_handler(CommandHandler("image_start", image_start))
-    app.add_handler(CommandHandler("profile", profile_command))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("history", history_command))
-    app.add_handler(CommandHandler("subscribe", subscribe_menu))
-
-    app.add_handler(CommandHandler("admin_stats", admin_stats))
-    app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
-    app.add_handler(CommandHandler("activate_sub", activate_subscription))
-    app.add_handler(CommandHandler("deactivate_sub", deactivate_subscription))
-
-    # Обработчики оплаты
-    app.add_handler(CallbackQueryHandler(button_handler))
+async def run_bot_and_webhook():
+    global telegram_bot
     
-    app.add_handler(CommandHandler("subscribe_telegram", subscribe_telegram))
-    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+    tg_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-    app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
+    tg_app.add_handler(CommandHandler("start", start))
+    tg_app.add_handler(CommandHandler("chat_start", chat_start))
+    tg_app.add_handler(CommandHandler("image_start", image_start))
+    tg_app.add_handler(CommandHandler("profile", profile_command))
+    tg_app.add_handler(CommandHandler("help", help_command))
+    tg_app.add_handler(CommandHandler("history", history_command))
+    tg_app.add_handler(CommandHandler("subscribe", subscribe_menu))
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    tg_app.add_handler(CommandHandler("admin_stats", admin_stats))
+    tg_app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
+    tg_app.add_handler(CommandHandler("activate_sub", activate_subscription))
+    tg_app.add_handler(CommandHandler("deactivate_sub", deactivate_subscription))
 
-    # Error handler
+    tg_app.add_handler(CallbackQueryHandler(button_handler))
+    
+    tg_app.add_handler(CommandHandler("subscribe_telegram", subscribe_telegram))
+    tg_app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    tg_app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+
+    tg_app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
+
+    tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    tg_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         logging.error(f"Exception while handling an update: {context.error}")
         if isinstance(update, Update) and update.message:
             await update.message.reply_text(f"Произошла ошибка: {context.error}")
 
-    app.add_error_handler(error_handler)
-
-    global telegram_bot
-    telegram_bot = app.bot
+    tg_app.add_error_handler(error_handler)
     
-    print("Платный бот запущен...")
-    app.run_polling()
+    telegram_bot = tg_app.bot
+    
+    webhook_app = web.Application()
+    webhook_app.router.add_get('/', handle_health)
+    webhook_app.router.add_post('/yookassa-webhook', handle_yookassa_webhook)
+    
+    runner = web.AppRunner(webhook_app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 5000)
+    await site.start()
+    print("Webhook server started on 0.0.0.0:5000")
+    logging.info("Webhook server started on 0.0.0.0:5000")
+    
+    async with tg_app:
+        await tg_app.start()
+        print("Telegram bot started...")
+        logging.info("Telegram bot started")
+        await tg_app.updater.start_polling()
+        
+        while True:
+            await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    print("Starting webhook server...")
-    webhook_thread = threading.Thread(target=run_webhook_server, daemon=True)
-    webhook_thread.start()
-    
-    import time as time_module
-    time_module.sleep(2)
-    print("Webhook server should be running on port 5000")
-    
-    main()
+    print("Starting bot and webhook server...")
+    asyncio.run(run_bot_and_webhook())
