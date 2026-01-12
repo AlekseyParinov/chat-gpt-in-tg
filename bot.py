@@ -699,8 +699,85 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_menu()
             )
 
+# --- Фоновая проверка платежей ---
+async def check_pending_payments(bot):
+    while True:
+        try:
+            await asyncio.sleep(30)
+            
+            if not YOOKASSA_AVAILABLE:
+                continue
+            
+            check_conn = sqlite3.connect("user_contexts.db")
+            check_cursor = check_conn.cursor()
+            
+            check_cursor.execute(
+                "SELECT payment_id, user_id FROM yookassa_payments WHERE status = 'pending'"
+            )
+            pending = check_cursor.fetchall()
+            
+            for payment_id, user_id in pending:
+                try:
+                    payment = Payment.find_one(payment_id)
+                    
+                    if payment.status == "succeeded":
+                        months = int(payment.metadata.get("months", 1)) if payment.metadata else 1
+                        days = months * 30
+                        
+                        check_cursor.execute(
+                            "SELECT role, history, free_requests, subscription_end FROM contexts WHERE user_id=?",
+                            (user_id,)
+                        )
+                        row = check_cursor.fetchone()
+                        
+                        if row:
+                            role, history, free_requests, current_sub_end = row
+                        else:
+                            role, history, free_requests, current_sub_end = "Ты ассистент.", "[]", 10, 0
+                        
+                        if current_sub_end > time.time():
+                            subscription_end = current_sub_end + days * 24 * 3600
+                        else:
+                            subscription_end = time.time() + days * 24 * 3600
+                        
+                        check_cursor.execute(
+                            "INSERT OR REPLACE INTO contexts VALUES (?,?,?,?,?)",
+                            (user_id, role, history, free_requests, subscription_end)
+                        )
+                        check_cursor.execute(
+                            "UPDATE yookassa_payments SET status = 'succeeded' WHERE payment_id = ?",
+                            (payment_id,)
+                        )
+                        check_conn.commit()
+                        
+                        logging.info(f"Payment check: Subscription activated for {user_id} for {days} days")
+                        
+                        try:
+                            await bot.send_message(
+                                chat_id=int(user_id),
+                                text=f"✅ Оплата получена! Подписка активирована на {days} дней."
+                            )
+                        except Exception as e:
+                            logging.error(f"Failed to notify user {user_id}: {e}")
+                    
+                    elif payment.status == "canceled":
+                        check_cursor.execute(
+                            "UPDATE yookassa_payments SET status = 'canceled' WHERE payment_id = ?",
+                            (payment_id,)
+                        )
+                        check_conn.commit()
+                
+                except Exception as e:
+                    logging.error(f"Error checking payment {payment_id}: {e}")
+            
+            check_conn.close()
+            
+        except Exception as e:
+            logging.error(f"Payment check loop error: {e}")
+            await asyncio.sleep(60)
+
 # --- Основная функция ---
-async def run_bot_and_webhook():
+async def run_bot():
     global telegram_bot
     
     tg_app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
@@ -738,26 +815,31 @@ async def run_bot_and_webhook():
     
     telegram_bot = tg_app.bot
     
-    webhook_app = web.Application()
-    webhook_app.router.add_get('/', handle_health)
-    webhook_app.router.add_post('/yookassa-webhook', handle_yookassa_webhook)
+    health_app = web.Application()
+    health_app.router.add_get('/', handle_health)
+    health_app.router.add_post('/yookassa-webhook', handle_yookassa_webhook)
     
-    runner = web.AppRunner(webhook_app)
+    runner = web.AppRunner(health_app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 5000)
     await site.start()
-    print("Webhook server started on 0.0.0.0:5000")
-    logging.info("Webhook server started on 0.0.0.0:5000")
+    print("Health check server on port 5000")
+    logging.info("Health check server on port 5000")
     
     async with tg_app:
         await tg_app.start()
         print("Telegram bot started...")
         logging.info("Telegram bot started")
+        
+        asyncio.create_task(check_pending_payments(tg_app.bot))
+        print("Payment checker started (every 30 seconds)")
+        logging.info("Payment checker started")
+        
         await tg_app.updater.start_polling()
         
         while True:
             await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    print("Starting bot and webhook server...")
-    asyncio.run(run_bot_and_webhook())
+    print("Starting Telegram bot...")
+    asyncio.run(run_bot())
