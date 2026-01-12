@@ -169,7 +169,13 @@ def yookassa_webhook():
         return jsonify({"status": "ok"}), 200
 
 def run_webhook_server():
-    flask_app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    try:
+        print("Flask webhook server starting on 0.0.0.0:5000...")
+        logging.info("Flask webhook server starting on 0.0.0.0:5000...")
+        flask_app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False, threaded=True)
+    except Exception as e:
+        print(f"Flask server error: {e}")
+        logging.error(f"Flask server error: {e}")
 
 def get_main_menu():
     keyboard = [
@@ -264,7 +270,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("1 месяц — 30₽", callback_data="sub_1")],
+        [InlineKeyboardButton("1 месяц — 1₽ (тест)", callback_data="sub_1")],
         [InlineKeyboardButton("3 месяца — 80₽", callback_data="sub_3")],
         [InlineKeyboardButton("6 месяцев — 160₽", callback_data="sub_6")]
     ]
@@ -274,7 +280,7 @@ async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 SUBSCRIPTION_PLANS = {
-    "sub_1": {"months": 1, "amount": "30.00", "label": "1 месяц"},
+    "sub_1": {"months": 1, "amount": "1.00", "label": "1 месяц"},
     "sub_3": {"months": 3, "amount": "80.00", "label": "3 месяца"},
     "sub_6": {"months": 6, "amount": "160.00", "label": "6 месяцев"}
 }
@@ -761,7 +767,12 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+    print("Starting webhook server...")
     webhook_thread = threading.Thread(target=run_webhook_server, daemon=True)
     webhook_thread.start()
+    
+    import time as time_module
+    time_module.sleep(2)
+    print("Webhook server should be running on port 5000")
     
     main()
