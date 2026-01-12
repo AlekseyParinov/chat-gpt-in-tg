@@ -433,7 +433,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Первые 10 сообщений закончились. Используй /subscribe для оформления подписки.")
         return
 
-    messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
+    math_instruction = "ВАЖНО: Никогда не используй LaTeX (\\[, \\], $, $$, \\frac, \\sqrt и т.д.). Пиши формулы только простым текстом с Unicode: √ для корня, ² ³ для степеней, × для умножения, ÷ для деления, ≈ для приблизительно равно. Пример правильного ответа: v = √(50² + 15²) = √2725 ≈ 52.2 м/с"
+    system_content = f"{role}\n\n{math_instruction}"
+    messages = [{"role": "system", "content": system_content}] + history + [{"role": "user", "content": text}]
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
@@ -490,8 +492,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text("🔍 Анализирую изображение...")
         
+        math_instruction = "ВАЖНО: Никогда не используй LaTeX (\\[, \\], $, $$, \\frac, \\sqrt и т.д.). Пиши формулы только простым текстом с Unicode: √ для корня, ² ³ для степеней, × для умножения, ÷ для деления, ≈ для приблизительно равно. Пример правильного ответа: v = √(50² + 15²) = √2725 ≈ 52.2 м/с"
+        system_content = f"{role}\n\n{math_instruction}"
         messages = [
-            {"role": "system", "content": role},
+            {"role": "system", "content": system_content},
             {
                 "role": "user",
                 "content": [
