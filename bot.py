@@ -444,8 +444,8 @@ async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE, amoun
         payment_url = payment.confirmation.confirmation_url
         
         await msg_target.reply_text(
-            f"💳 Для оплаты подписки (30₽) перейдите по ссылке:\n\n{payment_url}\n\n"
-            "После оплаты используйте команду /check_payment для активации подписки.",
+            f"💳 Для оплаты подписки ({label}) перейдите по ссылке:\n\n{payment_url}\n\n"
+            "✅ После оплаты подписка активируется автоматически!",
             reply_markup=get_main_menu()
         )
     except Exception as e:
