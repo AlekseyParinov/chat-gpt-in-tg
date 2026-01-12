@@ -5,6 +5,7 @@ import os
 import requests
 import threading
 import uuid
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -159,8 +160,14 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Я могу отвечать на ваши вопросы.\n\n"
-        "Если у вас возникли вопросы или проблемы, пожалуйста, обратитесь к администратору: @adam0v_0",
+        "🤖 Я могу:\n"
+        "• Отвечать на ваши вопросы\n"
+        "• Анализировать фотографии — просто отправьте фото с подписью или без\n\n"
+        "📸 Примеры использования фото:\n"
+        "— Сфотографируйте задачу и попросите решить\n"
+        "— Отправьте скриншот текста для перевода\n"
+        "— Пришлите фото для описания\n\n"
+        "Если у вас возникли вопросы, обратитесь к администратору: @adam0v_0",
         reply_markup=get_main_menu()
     )
 
@@ -464,6 +471,77 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_menu()
             )
 
+# --- Обработка фото с GPT-4o Vision ---
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    role, history, free_requests, subscription_end = get_user_context(user_id)
+    
+    if not has_access(user_id):
+        await update.message.reply_text("Первые 10 сообщений закончились. Используй /subscribe для оформления подписки.")
+        return
+    
+    caption = update.message.caption or "Что изображено на этом фото? Опиши подробно и помоги с любым заданием, если оно есть."
+    
+    try:
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        photo_bytes = await file.download_as_bytearray()
+        base64_image = base64.b64encode(photo_bytes).decode('utf-8')
+        
+        await update.message.reply_text("🔍 Анализирую изображение...")
+        
+        messages = [
+            {"role": "system", "content": role},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": caption},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ]
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=2000
+        )
+        answer = response.choices[0].message.content
+        
+        if len(answer) > 4000:
+            for i in range(0, len(answer), 4000):
+                chunk = answer[i:i+4000]
+                if chunk:
+                    await update.message.reply_text(chunk)
+        else:
+            await update.message.reply_text(answer)
+        
+        history.append({"role": "user", "content": f"[Фото] {caption}"})
+        history.append({"role": "assistant", "content": answer})
+        history = history[-20:]
+        if free_requests > 0:
+            free_requests -= 1
+        save_user_context(user_id, role, history, free_requests, subscription_end)
+        
+    except Exception as e:
+        error_msg = str(e)
+        logging.error(f"Photo processing error: {e}")
+        if "insufficient_quota" in error_msg or "429" in error_msg:
+            await update.message.reply_text(
+                "🤖 Извините, сейчас я перегружен. Попробуйте позже или обратитесь к @adam0v_0.",
+                reply_markup=get_main_menu()
+            )
+        else:
+            await update.message.reply_text(
+                "Произошла ошибка при обработке фото. Попробуйте еще раз.",
+                reply_markup=get_main_menu()
+            )
+
 # --- Генерация картинок ---
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
@@ -527,6 +605,7 @@ def main():
     app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     # Error handler
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
