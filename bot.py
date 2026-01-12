@@ -76,6 +76,8 @@ conn.commit()
 telegram_bot = None
 
 # --- Хелперы ---
+import json
+
 class WebhookHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -89,8 +91,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             
             try:
-                import json
                 data = json.loads(post_data.decode('utf-8'))
+                logging.info(f"Webhook received: {data.get('event')}")
                 
                 if data.get('event') == 'payment.succeeded':
                     payment_obj = data.get('object', {})
@@ -99,44 +101,70 @@ class WebhookHandler(BaseHTTPRequestHandler):
                     user_id = metadata.get('user_id')
                     months = int(metadata.get('months', 1))
                     
+                    logging.info(f"Processing payment {payment_id} for user {user_id}, months: {months}")
+                    
                     if user_id:
                         days = months * 30
-                        role, history, free_requests, current_sub_end = get_user_context(user_id)
                         
-                        if current_sub_end > time.time():
-                            subscription_end = current_sub_end + days * 24 * 3600
-                        else:
-                            subscription_end = time.time() + days * 24 * 3600
+                        webhook_conn = sqlite3.connect("user_contexts.db")
+                        webhook_cursor = webhook_conn.cursor()
                         
-                        save_user_context(user_id, role, history, free_requests, subscription_end)
-                        
-                        cursor.execute(
-                            "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
-                            ("succeeded", payment_id)
-                        )
-                        conn.commit()
-                        
-                        logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days")
-                        
-                        # Отправляем уведомление пользователю
-                        if telegram_bot:
-                            import asyncio
-                            try:
-                                loop = asyncio.get_event_loop()
-                            except RuntimeError:
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
+                        try:
+                            webhook_cursor.execute(
+                                "SELECT role, history, free_requests, subscription_end FROM contexts WHERE user_id=?", 
+                                (user_id,)
+                            )
+                            row = webhook_cursor.fetchone()
                             
-                            async def send_notification():
+                            if row:
+                                role, history, free_requests, current_sub_end = row
+                            else:
+                                default_role = "Ты ассистент, который отвечает коротко и логично."
+                                role, history, free_requests, current_sub_end = default_role, "[]", 10, 0
+                            
+                            if current_sub_end > time.time():
+                                subscription_end = current_sub_end + days * 24 * 3600
+                            else:
+                                subscription_end = time.time() + days * 24 * 3600
+                            
+                            webhook_cursor.execute(
+                                "INSERT OR REPLACE INTO contexts VALUES (?,?,?,?,?)",
+                                (user_id, role, history, free_requests, subscription_end)
+                            )
+                            
+                            webhook_cursor.execute(
+                                "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
+                                ("succeeded", payment_id)
+                            )
+                            webhook_conn.commit()
+                            
+                            logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days until {subscription_end}")
+                            
+                            if telegram_bot:
+                                import asyncio
                                 try:
-                                    await telegram_bot.send_message(
-                                        chat_id=int(user_id),
-                                        text=f"✅ Оплата получена! Подписка активирована на {days} дней."
-                                    )
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                    
+                                    async def send_notification():
+                                        try:
+                                            await telegram_bot.send_message(
+                                                chat_id=int(user_id),
+                                                text=f"✅ Оплата получена! Подписка активирована на {days} дней."
+                                            )
+                                            logging.info(f"Notification sent to user {user_id}")
+                                        except Exception as e:
+                                            logging.error(f"Failed to send notification to {user_id}: {e}")
+                                    
+                                    loop.run_until_complete(send_notification())
+                                    loop.close()
                                 except Exception as e:
-                                    logging.error(f"Failed to send notification: {e}")
-                            
-                            loop.run_until_complete(send_notification())
+                                    logging.error(f"Async notification error: {e}")
+                        
+                        except Exception as db_error:
+                            logging.error(f"Database error in webhook: {db_error}")
+                        finally:
+                            webhook_conn.close()
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
