@@ -181,17 +181,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("1 месяц — 30₽", callback_data="sub_1")],
+        [InlineKeyboardButton("3 месяца — 80₽", callback_data="sub_3")],
+        [InlineKeyboardButton("6 месяцев — 160₽", callback_data="sub_6")]
+    ]
     await update.message.reply_text(
-        "Выберите удобный способ оплаты подписки (30₽/мес):",
-        reply_markup=get_payment_menu()
+        "💳 Выберите срок подписки:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+SUBSCRIPTION_PLANS = {
+    "sub_1": {"months": 1, "amount": "30.00", "label": "1 месяц"},
+    "sub_3": {"months": 3, "amount": "80.00", "label": "3 месяца"},
+    "sub_6": {"months": 6, "amount": "160.00", "label": "6 месяцев"}
+}
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data == "pay_yookassa":
-        await pay_yookassa(update, context)
+    if query.data in SUBSCRIPTION_PLANS:
+        plan = SUBSCRIPTION_PLANS[query.data]
+        await pay_yookassa(update, context, plan["amount"], plan["months"], plan["label"])
+    elif query.data == "pay_yookassa":
+        await pay_yookassa(update, context, "30.00", 1, "1 месяц")
     elif query.data == "pay_telegram":
         await subscribe_telegram(update, context)
 
@@ -317,7 +331,7 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     await update.message.reply_text("Оплата через Telegram успешна! Подписка активирована на 30 дней.")
 
 # --- YooKassa платежи ---
-async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE, amount: str = "30.00", months: int = 1, label: str = "1 месяц"):
     msg_target = update.message or update.callback_query.message
     user_id = str((update.message or update.callback_query).from_user.id)
     
@@ -330,9 +344,10 @@ async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         idempotence_key = str(uuid.uuid4())
+        days = months * 30
         payment = Payment.create({
             "amount": {
-                "value": "30.00",
+                "value": amount,
                 "currency": "RUB"
             },
             "confirmation": {
@@ -340,9 +355,10 @@ async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "return_url": "https://t.me/your_bot"
             },
             "capture": True,
-            "description": f"Подписка на бота (30 дней) для пользователя {user_id}",
+            "description": f"Подписка на бота ({label}) для пользователя {user_id}",
             "metadata": {
-                "user_id": user_id
+                "user_id": user_id,
+                "months": months
             }
         }, idempotence_key)
         
@@ -395,11 +411,17 @@ async def check_yookassa_payment(update: Update, context: ContextTypes.DEFAULT_T
         
         if payment.status == "succeeded":
             # Платеж успешен - активируем подписку
-            role, history, free_requests, _ = get_user_context(user_id)
-            subscription_end = time.time() + 30*24*3600
+            months = int(payment.metadata.get("months", 1)) if payment.metadata else 1
+            days = months * 30
+            role, history, free_requests, current_sub_end = get_user_context(user_id)
+            
+            if current_sub_end > time.time():
+                subscription_end = current_sub_end + days * 24 * 3600
+            else:
+                subscription_end = time.time() + days * 24 * 3600
+            
             save_user_context(user_id, role, history, free_requests, subscription_end)
             
-            # Обновляем статус в базе
             cursor.execute(
                 "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
                 ("succeeded", payment_id)
@@ -407,7 +429,7 @@ async def check_yookassa_payment(update: Update, context: ContextTypes.DEFAULT_T
             conn.commit()
             
             await update.message.reply_text(
-                "✅ Оплата подтверждена! Подписка активирована на 30 дней.",
+                f"✅ Оплата подтверждена! Подписка активирована на {days} дней.",
                 reply_markup=get_main_menu()
             )
         elif payment.status == "pending":
