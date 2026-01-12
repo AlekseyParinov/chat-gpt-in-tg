@@ -274,7 +274,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("1 месяц — 1₽ (тест)", callback_data="sub_1")],
+        [InlineKeyboardButton("1 месяц — 30₽", callback_data="sub_1")],
         [InlineKeyboardButton("3 месяца — 80₽", callback_data="sub_3")],
         [InlineKeyboardButton("6 месяцев — 160₽", callback_data="sub_6")]
     ]
@@ -284,7 +284,7 @@ async def subscribe_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 SUBSCRIPTION_PLANS = {
-    "sub_1": {"months": 1, "amount": "1.00", "label": "1 месяц"},
+    "sub_1": {"months": 1, "amount": "30.00", "label": "1 месяц"},
     "sub_3": {"months": 3, "amount": "80.00", "label": "3 месяца"},
     "sub_6": {"months": 6, "amount": "160.00", "label": "6 месяцев"}
 }
