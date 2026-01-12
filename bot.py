@@ -636,7 +636,6 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
 
-
     app.add_handler(CommandHandler("check_payment", check_yookassa_payment))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -650,12 +649,28 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    print("Платный бот с оплатой через ЮКассу запущен...")
-    app.run_polling()
+    # Определяем режим запуска: webhook в production, polling в development
+    replit_deployment = os.environ.get("REPLIT_DEPLOYMENT")
+    webhook_url = os.environ.get("WEBHOOK_URL")
+    
+    if replit_deployment and webhook_url:
+        print(f"Запуск бота в режиме webhook: {webhook_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=5000,
+            url_path="webhook",
+            webhook_url=f"{webhook_url}/webhook"
+        )
+    else:
+        print("Платный бот запущен в режиме polling...")
+        app.run_polling()
 
 if __name__ == "__main__":
-    # Start health check server in a separate thread
-    health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
-    health_check_thread.start()
+    replit_deployment = os.environ.get("REPLIT_DEPLOYMENT")
+    webhook_url = os.environ.get("WEBHOOK_URL")
+    
+    if not (replit_deployment and webhook_url):
+        health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
+        health_check_thread.start()
     
     main()

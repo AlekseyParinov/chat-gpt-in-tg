@@ -45,3 +45,8 @@ run = ["python", "bot.py"]
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[userenv]
+
+[userenv.production]
+WEBHOOK_URL = "https://workspace.alekseyromanov1.repl.co"
