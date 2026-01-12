@@ -649,28 +649,11 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    # Определяем режим запуска: webhook в production, polling в development
-    replit_deployment = os.environ.get("REPLIT_DEPLOYMENT")
-    webhook_url = os.environ.get("WEBHOOK_URL")
-    
-    if replit_deployment and webhook_url:
-        print(f"Запуск бота в режиме webhook: {webhook_url}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=5000,
-            url_path="webhook",
-            webhook_url=f"{webhook_url}/webhook"
-        )
-    else:
-        print("Платный бот запущен в режиме polling...")
-        app.run_polling()
+    print("Платный бот запущен...")
+    app.run_polling()
 
 if __name__ == "__main__":
-    replit_deployment = os.environ.get("REPLIT_DEPLOYMENT")
-    webhook_url = os.environ.get("WEBHOOK_URL")
-    
-    if not (replit_deployment and webhook_url):
-        health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
-        health_check_thread.start()
+    health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
+    health_check_thread.start()
     
     main()

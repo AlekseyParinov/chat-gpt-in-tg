@@ -49,4 +49,3 @@ externalPort = 80
 [userenv]
 
 [userenv.production]
-WEBHOOK_URL = "https://workspace.alekseyromanov1.repl.co"
