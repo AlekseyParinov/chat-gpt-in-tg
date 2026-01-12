@@ -156,15 +156,32 @@ async def image_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     role, history, free_requests, subscription_end = get_user_context(user_id)
-    status = "Активна" if subscription_end > time.time() else "Неактивна"
-    sub_text = time.strftime('%d.%m.%Y %H:%M', time.localtime(subscription_end)) if subscription_end > 0 else "Нет"
-    await update.effective_message.reply_text(
+    
+    now = time.time()
+    days_left = (subscription_end - now) / (24 * 3600) if subscription_end > now else 0
+    
+    if subscription_end > now:
+        status = "✅ Активна"
+        if days_left <= 3:
+            status += f" (⚠️ осталось {int(days_left)} дн.)"
+    else:
+        status = "❌ Неактивна"
+    
+    sub_text = time.strftime('%d.%m.%Y', time.localtime(subscription_end)) if subscription_end > 0 else "—"
+    
+    text = (
         f"👤 Профиль\n\n"
         f"Ваш ID: {user_id}\n"
-        f"Остаток бесплатных запросов: {free_requests}\n"
+        f"Бесплатных запросов: {free_requests}\n"
         f"Подписка: {status}\n"
-        f"Дата окончания: {sub_text}",
-        reply_markup=get_main_menu()
+        f"Дата окончания: {sub_text}"
+    )
+    
+    keyboard = [[InlineKeyboardButton("🔄 Продлить подписку", callback_data="extend_sub")]]
+    
+    await update.effective_message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -201,7 +218,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data in SUBSCRIPTION_PLANS:
+    if query.data == "extend_sub":
+        keyboard = [
+            [InlineKeyboardButton("1 месяц — 30₽", callback_data="sub_1")],
+            [InlineKeyboardButton("3 месяца — 80₽", callback_data="sub_3")],
+            [InlineKeyboardButton("6 месяцев — 160₽", callback_data="sub_6")]
+        ]
+        await query.message.reply_text(
+            "💳 Выберите срок подписки:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    elif query.data in SUBSCRIPTION_PLANS:
         plan = SUBSCRIPTION_PLANS[query.data]
         await pay_yookassa(update, context, plan["amount"], plan["months"], plan["label"])
     elif query.data == "pay_yookassa":
@@ -614,8 +641,34 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
 # --- Основная функция ---
+async def check_expiring_subscriptions(context: ContextTypes.DEFAULT_TYPE):
+    """Проверяет подписки, истекающие в ближайшие 3 дня, и отправляет напоминания"""
+    now = time.time()
+    three_days = 3 * 24 * 3600
+    
+    cursor.execute(
+        "SELECT user_id, subscription_end FROM contexts WHERE subscription_end > ? AND subscription_end <= ?",
+        (now, now + three_days)
+    )
+    expiring_users = cursor.fetchall()
+    
+    for user_id, sub_end in expiring_users:
+        days_left = int((sub_end - now) / (24 * 3600))
+        try:
+            keyboard = [[InlineKeyboardButton("🔄 Продлить подписку", callback_data="extend_sub")]]
+            await context.bot.send_message(
+                chat_id=int(user_id),
+                text=f"⚠️ Ваша подписка истекает через {days_left} дн.\n\nПродлите сейчас, чтобы не потерять доступ!",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            logging.warning(f"Failed to send reminder to {user_id}: {e}")
+
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    job_queue = app.job_queue
+    job_queue.run_repeating(check_expiring_subscriptions, interval=24*3600, first=60)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("chat_start", chat_start))
