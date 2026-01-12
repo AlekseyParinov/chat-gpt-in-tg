@@ -456,7 +456,7 @@ async def pay_yookassa(update: Update, context: ContextTypes.DEFAULT_TYPE, amoun
             },
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://t.me/your_bot"
+                "return_url": "https://t.me/smaart_chatbot"
             },
             "capture": True,
             "description": f"Подписка на бота ({label}) для пользователя {user_id}",
