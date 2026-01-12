@@ -18,6 +18,7 @@ A Telegram bot powered by GPT-4o that provides AI chat with text and photo analy
 
 ## Admin Commands
 - `/activate_sub <user_id> [months]` - Activate subscription for a user
+- `/deactivate_sub <user_id>` - Deactivate subscription for a user (sends notification)
 - `/admin_stats` - View bot statistics
 - `/admin_broadcast <message>` - Send message to all users
 

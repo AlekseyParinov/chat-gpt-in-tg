@@ -369,6 +369,28 @@ async def activate_subscription(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception:
         pass
 
+async def deactivate_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.message.from_user
+    if str(user.id) != ADMIN_ID and user.username != "adam0v_0":
+        return
+    
+    if not context.args:
+        await update.message.reply_text("Использование: /deactivate_sub <user_id>\nПример: /deactivate_sub 123456789")
+        return
+    
+    target_user_id = context.args[0]
+    role, history, free_requests, _ = get_user_context(target_user_id)
+    save_user_context(target_user_id, role, history, free_requests, 0)
+    
+    await update.message.reply_text(f"❌ Подписка для {target_user_id} деактивирована.")
+    try:
+        await context.bot.send_message(
+            chat_id=target_user_id, 
+            text="⚠️ Ваша подписка признана недействительной по решению администратора.\n\nЕсли у вас есть вопросы, обратитесь к @adam0v_0."
+        )
+    except Exception:
+        pass
+
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     _, history, _, _ = get_user_context(user_id)
@@ -700,6 +722,7 @@ def main():
     app.add_handler(CommandHandler("admin_stats", admin_stats))
     app.add_handler(CommandHandler("admin_broadcast", admin_broadcast))
     app.add_handler(CommandHandler("activate_sub", activate_subscription))
+    app.add_handler(CommandHandler("deactivate_sub", deactivate_subscription))
 
     # Обработчики оплаты
     app.add_handler(CallbackQueryHandler(button_handler))
