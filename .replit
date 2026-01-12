@@ -28,7 +28,6 @@ outputType = "webview"
 task = "shell.exec"
 args = """
 python -c \"from http.server import HTTPServer, BaseHTTPRequestHandler
-import socket
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -36,12 +35,6 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'Bot runs on production server')
     def log_message(self, *args): pass
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(('0.0.0.0', 5000))
-sock.listen(1)
-sock.close()
 
 print('Dev server on port 5000 - Bot runs only in production')
 HTTPServer(('0.0.0.0', 5000), H).serve_forever()\""""

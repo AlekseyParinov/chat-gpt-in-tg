@@ -72,21 +72,93 @@ CREATE TABLE IF NOT EXISTS yookassa_payments (
 """)
 conn.commit()
 
+# --- Глобальная переменная для Telegram бота ---
+telegram_bot = None
+
 # --- Хелперы ---
-class HealthCheckHandler(BaseHTTPRequestHandler):
+class WebhookHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"OK")
+    
+    def do_POST(self):
+        if self.path == '/yookassa-webhook':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                import json
+                data = json.loads(post_data.decode('utf-8'))
+                
+                if data.get('event') == 'payment.succeeded':
+                    payment_obj = data.get('object', {})
+                    payment_id = payment_obj.get('id')
+                    metadata = payment_obj.get('metadata', {})
+                    user_id = metadata.get('user_id')
+                    months = int(metadata.get('months', 1))
+                    
+                    if user_id:
+                        days = months * 30
+                        role, history, free_requests, current_sub_end = get_user_context(user_id)
+                        
+                        if current_sub_end > time.time():
+                            subscription_end = current_sub_end + days * 24 * 3600
+                        else:
+                            subscription_end = time.time() + days * 24 * 3600
+                        
+                        save_user_context(user_id, role, history, free_requests, subscription_end)
+                        
+                        cursor.execute(
+                            "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
+                            ("succeeded", payment_id)
+                        )
+                        conn.commit()
+                        
+                        logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days")
+                        
+                        # Отправляем уведомление пользователю
+                        if telegram_bot:
+                            import asyncio
+                            try:
+                                loop = asyncio.get_event_loop()
+                            except RuntimeError:
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                            
+                            async def send_notification():
+                                try:
+                                    await telegram_bot.send_message(
+                                        chat_id=int(user_id),
+                                        text=f"✅ Оплата получена! Подписка активирована на {days} дней."
+                                    )
+                                except Exception as e:
+                                    logging.error(f"Failed to send notification: {e}")
+                            
+                            loop.run_until_complete(send_notification())
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"status": "ok"}')
+                
+            except Exception as e:
+                logging.error(f"Webhook error: {e}")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status": "ok"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def log_message(self, format, *args):
         return
 
-def run_health_check_server():
+def run_webhook_server():
     server_address = ('0.0.0.0', 5000)
-    httpd = HTTPServer(server_address, HealthCheckHandler)
-    print("Health check server started on port 5000")
+    httpd = HTTPServer(server_address, WebhookHandler)
+    print("Webhook server started on port 5000")
     httpd.serve_forever()
 
 def get_main_menu():
@@ -649,11 +721,14 @@ def main():
 
     app.add_error_handler(error_handler)
 
+    global telegram_bot
+    telegram_bot = app.bot
+    
     print("Платный бот запущен...")
     app.run_polling()
 
 if __name__ == "__main__":
-    health_check_thread = threading.Thread(target=run_health_check_server, daemon=True)
-    health_check_thread.start()
+    webhook_thread = threading.Thread(target=run_webhook_server, daemon=True)
+    webhook_thread.start()
     
     main()
