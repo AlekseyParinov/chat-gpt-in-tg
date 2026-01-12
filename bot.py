@@ -6,7 +6,8 @@ import requests
 import threading
 import uuid
 import base64
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+from flask import Flask, request as flask_request, jsonify
 from telegram import Update, LabeledPrice, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -75,119 +76,100 @@ conn.commit()
 # --- Глобальная переменная для Telegram бота ---
 telegram_bot = None
 
-# --- Хелперы ---
-import json
+# --- Flask приложение для webhook ---
+flask_app = Flask(__name__)
+flask_app.logger.setLevel(logging.INFO)
 
-class WebhookHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b"OK")
-    
-    def do_POST(self):
-        if self.path == '/yookassa-webhook':
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
+@flask_app.route('/')
+def health_check():
+    return jsonify({"status": "running", "bot": "active"}), 200
+
+@flask_app.route('/yookassa-webhook', methods=['POST'])
+def yookassa_webhook():
+    try:
+        data = flask_request.get_json()
+        logging.info(f"Webhook received: {data.get('event') if data else 'no data'}")
+        
+        if data and data.get('event') == 'payment.succeeded':
+            payment_obj = data.get('object', {})
+            payment_id = payment_obj.get('id')
+            metadata = payment_obj.get('metadata', {})
+            user_id = metadata.get('user_id')
+            months = int(metadata.get('months', 1))
             
-            try:
-                data = json.loads(post_data.decode('utf-8'))
-                logging.info(f"Webhook received: {data.get('event')}")
+            logging.info(f"Processing payment {payment_id} for user {user_id}, months: {months}")
+            
+            if user_id:
+                days = months * 30
                 
-                if data.get('event') == 'payment.succeeded':
-                    payment_obj = data.get('object', {})
-                    payment_id = payment_obj.get('id')
-                    metadata = payment_obj.get('metadata', {})
-                    user_id = metadata.get('user_id')
-                    months = int(metadata.get('months', 1))
+                webhook_conn = sqlite3.connect("user_contexts.db")
+                webhook_cursor = webhook_conn.cursor()
+                
+                try:
+                    webhook_cursor.execute(
+                        "SELECT role, history, free_requests, subscription_end FROM contexts WHERE user_id=?", 
+                        (user_id,)
+                    )
+                    row = webhook_cursor.fetchone()
                     
-                    logging.info(f"Processing payment {payment_id} for user {user_id}, months: {months}")
+                    if row:
+                        role, history, free_requests, current_sub_end = row
+                    else:
+                        default_role = "Ты ассистент, который отвечает коротко и логично."
+                        role, history, free_requests, current_sub_end = default_role, "[]", 10, 0
                     
-                    if user_id:
-                        days = months * 30
-                        
-                        webhook_conn = sqlite3.connect("user_contexts.db")
-                        webhook_cursor = webhook_conn.cursor()
-                        
+                    if current_sub_end > time.time():
+                        subscription_end = current_sub_end + days * 24 * 3600
+                    else:
+                        subscription_end = time.time() + days * 24 * 3600
+                    
+                    webhook_cursor.execute(
+                        "INSERT OR REPLACE INTO contexts VALUES (?,?,?,?,?)",
+                        (user_id, role, history, free_requests, subscription_end)
+                    )
+                    
+                    webhook_cursor.execute(
+                        "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
+                        ("succeeded", payment_id)
+                    )
+                    webhook_conn.commit()
+                    
+                    logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days")
+                    
+                    if telegram_bot:
+                        import asyncio
                         try:
-                            webhook_cursor.execute(
-                                "SELECT role, history, free_requests, subscription_end FROM contexts WHERE user_id=?", 
-                                (user_id,)
-                            )
-                            row = webhook_cursor.fetchone()
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
                             
-                            if row:
-                                role, history, free_requests, current_sub_end = row
-                            else:
-                                default_role = "Ты ассистент, который отвечает коротко и логично."
-                                role, history, free_requests, current_sub_end = default_role, "[]", 10, 0
-                            
-                            if current_sub_end > time.time():
-                                subscription_end = current_sub_end + days * 24 * 3600
-                            else:
-                                subscription_end = time.time() + days * 24 * 3600
-                            
-                            webhook_cursor.execute(
-                                "INSERT OR REPLACE INTO contexts VALUES (?,?,?,?,?)",
-                                (user_id, role, history, free_requests, subscription_end)
-                            )
-                            
-                            webhook_cursor.execute(
-                                "UPDATE yookassa_payments SET status = ? WHERE payment_id = ?",
-                                ("succeeded", payment_id)
-                            )
-                            webhook_conn.commit()
-                            
-                            logging.info(f"Webhook: Subscription activated for user {user_id} for {days} days until {subscription_end}")
-                            
-                            if telegram_bot:
-                                import asyncio
+                            async def send_notification():
                                 try:
-                                    loop = asyncio.new_event_loop()
-                                    asyncio.set_event_loop(loop)
-                                    
-                                    async def send_notification():
-                                        try:
-                                            await telegram_bot.send_message(
-                                                chat_id=int(user_id),
-                                                text=f"✅ Оплата получена! Подписка активирована на {days} дней."
-                                            )
-                                            logging.info(f"Notification sent to user {user_id}")
-                                        except Exception as e:
-                                            logging.error(f"Failed to send notification to {user_id}: {e}")
-                                    
-                                    loop.run_until_complete(send_notification())
-                                    loop.close()
+                                    await telegram_bot.send_message(
+                                        chat_id=int(user_id),
+                                        text=f"✅ Оплата получена! Подписка активирована на {days} дней."
+                                    )
+                                    logging.info(f"Notification sent to user {user_id}")
                                 except Exception as e:
-                                    logging.error(f"Async notification error: {e}")
-                        
-                        except Exception as db_error:
-                            logging.error(f"Database error in webhook: {db_error}")
-                        finally:
-                            webhook_conn.close()
+                                    logging.error(f"Failed to send notification to {user_id}: {e}")
+                            
+                            loop.run_until_complete(send_notification())
+                            loop.close()
+                        except Exception as e:
+                            logging.error(f"Async notification error: {e}")
                 
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(b'{"status": "ok"}')
-                
-            except Exception as e:
-                logging.error(f"Webhook error: {e}")
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'{"status": "ok"}')
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format, *args):
-        return
+                except Exception as db_error:
+                    logging.error(f"Database error in webhook: {db_error}")
+                finally:
+                    webhook_conn.close()
+        
+        return jsonify({"status": "ok"}), 200
+        
+    except Exception as e:
+        logging.error(f"Webhook error: {e}")
+        return jsonify({"status": "ok"}), 200
 
 def run_webhook_server():
-    server_address = ('0.0.0.0', 5000)
-    httpd = HTTPServer(server_address, WebhookHandler)
-    print("Webhook server started on port 5000")
-    httpd.serve_forever()
+    flask_app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 def get_main_menu():
     keyboard = [
