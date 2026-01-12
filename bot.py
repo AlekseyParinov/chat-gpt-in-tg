@@ -98,7 +98,7 @@ def get_main_menu():
 
 def get_payment_menu():
     keyboard = [
-        [InlineKeyboardButton("💳 Оплатить 30₽", callback_data="pay_telegram")]
+        [InlineKeyboardButton("💳 Оплатить 100₽", callback_data="pay_telegram")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -283,7 +283,7 @@ async def subscribe_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         chat_id = update.message.chat_id
     
-    price = LabeledPrice(label="Подписка на 30₽/мес", amount=3000)  # сумма в копейках
+    price = LabeledPrice(label="Подписка на месяц", amount=10000)  # 100₽ в копейках (минимум для теста)
     await context.bot.send_invoice(
         chat_id=chat_id,
         title="Подписка на бота",
